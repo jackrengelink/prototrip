@@ -1,53 +1,40 @@
-# Putting ProtoTrip online with Koyeb
+# ProtoTrip online (Render)
 
-ProtoTrip runs on Koyeb's free plan: one small server in Frankfurt with HTTPS and an address like
-`https://prototrip-<yourname>.koyeb.app`. If nobody visits for an hour it goes to sleep; the next visit wakes it
-in a few seconds. Every push to GitHub redeploys it automatically.
+ProtoTrip runs at **https://prototrip.onrender.com** on Render's free plan (Frankfurt). Every push to the `main` branch
+of `github.com/jackrengelink/prototrip` (private) is built and deployed automatically.
 
-## What's already prepared in the code
+> Koyeb was the first choice, but since Mistral bought it (2026) it no longer accepts new free accounts.
 
-| Piece | What it does |
+## How it's set up
+
+| Setting on Render | Value |
 |---|---|
-| `Dockerfile` | Builds the app on Node 24 (no other dependencies), runs it as an unprivileged user on port 8000 |
-| `.dockerignore` / `.gitignore` | Keep `.env` (your keys) and local caches out of GitHub and the server |
-| `ACCESS_PASSWORD` | When set, the browser asks for a login. User name `proto` (change it with `ACCESS_USER`), password your choice |
-| `/healthz` | A health-check page for Koyeb that needs no password |
-| `TRUST_PROXY=1` | Set in the Dockerfile: uses visitors' real IPs (for rate limiting and wrong-password lockout) and forces HTTPS |
+| Source | GitHub `jackrengelink/prototrip`, branch `main`, auto-deploy on |
+| Language / builder | Docker (uses the `Dockerfile` in the repo) |
+| Region · plan | Frankfurt (EU Central) · Free |
+| Health check path | `/healthz` |
+| Environment variables | `ACCESS_PASSWORD`, `TRAVELPAYOUTS_TOKEN`, `SERPAPI_KEY`, `GEOAPIFY_KEY`, `CONTACT_EMAIL` (and `RYANAIR=on`) |
 
-## Steps
+Don't set `PORT`: Render picks it and the app listens on whatever Render says.
 
-### 1. Put the code on GitHub (private)
-1. On https://github.com/new create a repository called `prototrip`. Make it **Private**, and **don't** add a README or a .gitignore (the project has them).
-2. Copy the repository URL (`https://github.com/<you>/prototrip.git`) and push the code. Claude can do this part, and Windows will ask you to log in to GitHub once.
+## Logging in
+Anyone opening the site gets the ProtoTrip login page and only needs the **committee password** (`ACCESS_PASSWORD`).
+After logging in, a device stays logged in for 30 days. `/logout` logs out. This works in every browser, including
+WhatsApp and Instagram's built-in ones. After 10 wrong passwords from one address, that address has to wait 10 minutes.
 
-### 2. Create the service on Koyeb
-1. Sign up at https://app.koyeb.com. The easiest way is **Continue with GitHub**.
-2. **Create Web Service → GitHub**, and allow Koyeb to see the `prototrip` repository (only that one is enough).
-3. **Builder:** *Dockerfile* (it's detected automatically).
-4. **Instance:** *Free*. **Region:** *Frankfurt*.
-5. **Ports / health check:** port `8000`, protocol HTTP, health check path `/healthz`.
-6. **Environment variables.** Add these from your local `.env` file, as *Secret* where Koyeb offers it:
+**Changing the password:** in Render go to *prototrip → Environment*, edit `ACCESS_PASSWORD`, then save
+(Render redeploys). This also logs everybody out.
 
-   | Name | Value |
-   |---|---|
-   | `ACCESS_PASSWORD` | a password for the committee (pick something new, not one you use elsewhere) |
-   | `TRAVELPAYOUTS_TOKEN` | from `.env` |
-   | `SERPAPI_KEY` | from `.env` |
-   | `GEOAPIFY_KEY` | from `.env` (optional) |
-   | `CONTACT_EMAIL` | from `.env` |
-
-7. **Service name:** `prototrip`, then press **Deploy**. The first build takes a few minutes.
-
-### 3. Open it
-Go to the `*.koyeb.app` address Koyeb shows. Your browser asks for a login: user `proto`, plus the password you chose.
-Share both with the committee.
+## Free plan behaviour
+- After **15 minutes** without visitors the server sleeps; the next visit takes **~50–60 seconds** to wake it,
+  then it's fast again.
+- 750 free hours a month (enough for one service running all month) and ~5 GB of data a month.
 
 ## Updating
-Change the code, commit and push; Koyeb rebuilds and redeploys by itself. To change a key or the password, edit the
-environment variable in Koyeb and press **Redeploy**.
+Commit and push to `main`. Render rebuilds by itself, and you can follow it under *prototrip → Events / Logs*.
 
 ## If something's off
-- **Fares missing online but fine at home?** Ryanair or FlixBus may block requests from data centres. The app keeps
-  working with Travelpayouts; check the Koyeb **Logs** tab for lines like `[flights] ryanair ... failed`.
-- **Slow first page?** The server was asleep. It wakes in a few seconds, then it's quick again.
-- **Locked out after typing the wrong password?** After 10 wrong tries from one address, wait 10 minutes.
+- **Fares missing online but fine at home?** Ryanair or FlixBus may block requests from data centres. Check
+  *Logs* for lines like `[flights] ryanair ... failed`. Travelpayouts (your key) keeps working either way.
+- **Build failed?** *Events* shows the build log; the usual cause is a typo in a recent change. Run `npm test` locally first.
+- **Locked out?** Wait 10 minutes after too many wrong passwords.
