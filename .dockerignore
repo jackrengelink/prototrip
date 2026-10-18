@@ -1,0 +1,11 @@
+# Never ship secrets or local caches into the image.
+.env
+.env.*
+!.env.example
+.cache/
+node_modules/
+coverage/
+test/
+.claude/
+.git/
+*.log

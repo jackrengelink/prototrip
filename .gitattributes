@@ -1,0 +1,3 @@
+# Linux line endings in the repo, so the Koyeb build behaves the same as here.
+* text=auto eol=lf
+*.png binary

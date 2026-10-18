@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ProtoTrip</title>
+  <meta name="description" content="Crazy flight deals from the Netherlands, with a day-by-day plan for when you land. Made for S.A. Proto trips.">
+  <meta name="color-scheme" content="dark light">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&family=Space+Grotesk:wght@500;700&display=swap">
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="/styles.css">
+  <script defer src="/vendor/leaflet/leaflet.js"></script>
+  <script type="module" src="/js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="ProtoTrip home">
+      <span class="ring" aria-hidden="true"><span class="ring-plane">✈</span></span>
+      <span class="brand-name">Proto<b>Trip</b></span>
+    </a>
+    <span class="brand-sub">Trip finder for S.A. Proto · Enschede</span>
+    <span class="status-chip" id="status-chip" role="status">Checking sources…</span>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to light mode">☀</button>
+  </header>
+
+  <main>
+    <section class="search" aria-labelledby="search-heading">
+      <div class="search-copy">
+        <p class="eyebrow">From Enschede to anywhere</p>
+        <h1 id="search-heading" class="search-title">Find the <span class="hot">crazy</span> deal.<br>Plan the whole trip.</h1>
+        <p class="search-lede" data-mode-only="fly">Live fares from the airports you can reach by train from the UT, with the trip to the
+          airport counted in the price. Crazy = crazy cheap for the distance.</p>
+        <p class="search-lede" data-mode-only="ground" hidden>Straight from Enschede by FlixBus and FlixTrain: no airports, no hassle.
+          ProtoTrip's sweet spot is €50–70 return per person.</p>
+      </div>
+
+      <form id="search-form" class="search-card" autocomplete="off">
+        <div class="mode-tabs" role="tablist" aria-label="How do you want to travel?">
+          <button type="button" role="tab" class="mode-tab" data-mode="fly" aria-selected="true">✈ Fly</button>
+          <button type="button" role="tab" class="mode-tab" data-mode="ground" aria-selected="false">🚌 Bus &amp; train</button>
+        </div>
+        <p class="ground-from" data-mode-only="ground" hidden>From <b>Enschede</b> · FlixBus &amp; FlixTrain · anywhere within 10 hours</p>
+        <label class="flex-toggle" data-mode-only="ground" hidden>
+          <input type="checkbox" id="domestic">
+          <span>Include Dutch cities (usually free with your student OV)</span>
+        </label>
+        <div class="row" data-mode-only="fly">
+          <label class="field">
+            <span class="field-label">From</span>
+            <input name="origin" id="origin" list="airport-list" maxlength="60">
+          </label>
+          <label class="field">
+            <span class="field-label">To</span>
+            <input name="destination" id="destination" list="airport-list" placeholder="Anywhere" maxlength="60">
+          </label>
+        </div>
+        <div class="row">
+          <label class="field">
+            <span class="field-label">Depart</span>
+            <input type="date" name="departDate" id="departDate" required>
+          </label>
+          <label class="field">
+            <span class="field-label">Return</span>
+            <input type="date" name="returnDate" id="returnDate">
+          </label>
+          <label class="field field-narrow">
+            <span class="field-label">Max € pp</span>
+            <input type="number" name="budget" id="budget" min="1" max="100000" placeholder="any">
+          </label>
+        </div>
+        <label class="flex-toggle" data-mode-only="fly">
+          <input type="checkbox" id="flex" checked>
+          <span>Flexible: ±3 days around these dates (finds way more crazy deals)</span>
+        </label>
+        <fieldset class="group" data-mode-only="fly">
+          <legend class="field-label">Which airports?</legend>
+          <div class="segmented" role="radiogroup">
+            <label><input type="radio" name="airports" value="nl"><span>Dutch only</span></label>
+            <label><input type="radio" name="airports" value="near" checked><span>NL + German border</span></label>
+            <label><input type="radio" name="airports" value="all"><span>+ Belgium</span></label>
+          </div>
+        </fieldset>
+        <fieldset class="group" data-mode-only="fly">
+          <legend class="field-label">How far?</legend>
+          <div class="segmented" id="reach" role="radiogroup">
+            <label><input type="radio" name="reach" value="short"><span>Europe-ish</span></label>
+            <label><input type="radio" name="reach" value="smart" checked><span>Europe + crazy long-haul</span></label>
+            <label><input type="radio" name="reach" value="world"><span>Whole world</span></label>
+          </div>
+        </fieldset>
+        <fieldset class="group">
+          <legend class="field-label">We're into</legend>
+          <div class="chips" id="interest-chips"></div>
+        </fieldset>
+        <button class="btn-primary" type="submit">Hunt for deals</button>
+        <datalist id="airport-list"></datalist>
+      </form>
+    </section>
+
+    <div id="notice" class="notice" hidden></div>
+    <section id="results" class="results">
+      <div class="results-layout">
+        <aside class="map-panel" aria-label="Map of deals">
+          <div class="map-head">
+            <span class="map-title" id="map-title">All deals on the map</span>
+            <button class="btn-ghost map-clear" id="map-clear" type="button" hidden>Show all</button>
+          </div>
+          <div id="deal-map" class="deal-map"></div>
+          <div class="map-legend" aria-hidden="true">
+            <span><i class="lg lg-crazy"></i>Crazy</span><span><i class="lg lg-great"></i>Great</span><span><i class="lg lg-good"></i>Good</span>
+            <span><i class="lg lg-train"></i>Train to airport</span><span><i class="lg lg-flight"></i>Flight</span><span><i class="lg lg-ground"></i>Bus / train</span>
+          </div>
+          <p class="map-hint">Scroll over the map to zoom · click a dot or a deal to see its route</p>
+        </aside>
+        <div id="results-list" aria-live="polite"></div>
+      </div>
+    </section>
+    <section id="trip" class="trip" aria-live="polite" hidden></section>
+  </main>
+
+  <footer class="footer">
+    <p>ProtoTrip is a committee tool, not a travel agency. Flights: Ryanair, Aviasales (Travelpayouts), Google Flights (SerpApi).
+      Bus &amp; train: FlixBus / FlixTrain. Train costs to airports are estimates. Places: Wikipedia, OpenStreetMap (Geoapify), Viator. Weather: Open-Meteo.
+      Train times from Enschede are rough guides. Always confirm the price on the booking site.</p>
+  </footer>
+</body>
+</html>

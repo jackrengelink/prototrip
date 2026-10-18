@@ -1,0 +1,6 @@
+*.log
+.cache/
+.claude/
+.env
+coverage/
+node_modules/

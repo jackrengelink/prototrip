@@ -1,0 +1,14 @@
+{
+  "name": "prototrip",
+  "version": "0.1.0",
+  "description": "Finds crazy flight deals and builds a day-by-day plan for the destination.",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node --watch-path=./server --watch-path=./.env server/index.js",
+    "start:once": "node server/index.js",
+        "test": "node --test",
+    "coverage": "node --test --experimental-test-coverage --test-coverage-exclude=test/**"
+  }
+}
