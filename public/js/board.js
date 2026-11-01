@@ -29,7 +29,13 @@ export const totalOf = (offer) => offer.totalPrice ?? offer.price;
 export function priceSplit(offer) {
   if (offer.mode === 'ground') return offer.priceIsFrom ? 'from-price: cheapest seat each way' : null;
   if (!offer.travelEur) return null;
-  return `${money(offer.price, offer.currency)} flight + ~${money(offer.travelEur, offer.currency)} train to ${offer.origin}`;
+  return `flight + train/bus to ${offer.origin} (estimate)`;
+}
+
+/** Two numbers: "€46 + €30", the flight and the train/bus to the airport. Other trips show one price. */
+export function priceNumbers(offer) {
+  if (!offer.travelEur) return money(offer.price, offer.currency);
+  return [money(offer.price, offer.currency), h('span', { class: 'plus-travel' }, ` + ${money(offer.travelEur, offer.currency)}`)];
 }
 
 /** Both reasons in one sentence: price for the distance, and % off normal. */
@@ -89,7 +95,7 @@ function crazyCard(offer, index, ctx) {
       h('div', { class: 'crazy-top' },
         h('h3', { class: 'crazy-city' }, title),
         offer.deal.savingsPct > 0 ? h('span', { class: 'crazy-save', title: discountLine(offer) }, `−${offer.deal.savingsPct}%`) : null),
-      h('div', { class: 'crazy-price' }, offer.priceIsFrom ? h('small', {}, 'from ') : null, money(totalOf(offer), offer.currency), h('small', {}, offer.returnDate ? ' return' : ' one way')),
+      h('div', { class: 'crazy-price' }, offer.priceIsFrom ? h('small', {}, 'from ') : null, priceNumbers(offer), h('small', {}, offer.returnDate ? ' return' : ' one way')),
       priceSplit(offer) ? h('div', { class: 'price-split' }, priceSplit(offer)) : null,
       h('div', { class: 'crazy-why' },
         h('span', { class: 'why', 'data-on': String(offer.deal.reasons.includes('cheap-for-distance')) },
@@ -135,8 +141,8 @@ function row(offer, index, ctx) {
       h('small', {}, offer.mode === 'ground' ? offer.airline : Number.isFinite(offer.travelMin) ? `🚆 ${fmtDuration(offer.travelMin)} · ~${money(offer.travelEur || 0)}` : originName(offer, home))),
     h('div', { class: 'c-when', role: 'cell' }, whenLabel(offer), offer.departTime && anywhere ? h('small', {}, `dep ${offer.departTime}`) : null),
     h('div', { class: 'c-air dim', role: 'cell' }, offer.airline, h('small', {}, [stopsLabel(offer.transfers), offer.durationMin ? fmtDuration(offer.durationMin) : null].filter(Boolean).join(' · '))),
-    h('div', { class: 'c-price price', role: 'cell' }, money(totalOf(offer), offer.currency),
-      h('small', {}, offer.priceIsFrom ? 'from' : offer.travelEur ? `incl. ~${money(offer.travelEur)} train` : offer.live ? 'live' : offer.source === 'demo' ? 'demo' : 'recent')),
+    h('div', { class: 'c-price price', role: 'cell' }, priceNumbers(offer),
+      h('small', {}, offer.priceIsFrom ? 'from' : offer.travelEur ? 'flight + train/bus' : offer.live ? 'live' : offer.source === 'demo' ? 'demo' : 'recent')),
     h('div', { class: 'c-badge', role: 'cell' }, dealBadge(offer), saving ? h('small', {}, saving) : null),
     h('div', { class: 'c-plan', role: 'cell' },
       h('button', { class: 'btn-plan', type: 'button', onClick: () => onPlan(offer) }, 'Plan trip →')),
@@ -148,14 +154,15 @@ function board(offers, data, ctx) {
     : data.country ? `Flights to ${data.country.name}`
       : ctx.anywhere ? `Departures from ${data.origin?.name || ''}` : `${offers.length} flights to ${offers[0]?.destinationName || 'your destination'}`;
   const subtitle = [
-    data.country ? `${offers.length} routes to ${new Set(offers.map((o) => o.destination)).size} airports, best deals first`
-      : ctx.anywhere ? `${offers.length} destinations, cheapest for the distance first` : 'Cheapest first',
+    data.country ? `${offers.length} routes to ${new Set(offers.map((o) => o.destination)).size} airports, cheapest flight first`
+      : ctx.mode === 'ground' ? `${offers.length} destinations, cheapest for the distance first`
+        : ctx.anywhere ? `${offers.length} destinations, cheapest flight first` : 'Cheapest flight first',
     data.demo ? 'Demo fares: add API keys for real prices' : null,
   ].filter(Boolean).join(' · ');
   return h('div', { class: 'board', role: 'table', 'aria-label': title },
     h('div', { class: 'board-head' }, h('h2', {}, title), h('p', {}, subtitle)),
     h('div', { class: 'board-cols', role: 'row' },
-      ['Destination', 'From', 'When', ctx.mode === 'ground' ? 'How' : 'Airline', ctx.mode === 'ground' ? 'Price' : 'Door to door', 'Deal', ''].map((c) => h('div', { role: 'columnheader' }, c))),
+      ['Destination', 'From', 'When', ctx.mode === 'ground' ? 'How' : 'Airline', ctx.mode === 'ground' ? 'Price' : 'Flight + travel', 'Deal', ''].map((c) => h('div', { role: 'columnheader' }, c))),
     offers.length
       ? offers.slice(0, ctx.limit || 80).map((o, i) => row(o, i, ctx))
       : h('p', { class: 'empty' }, 'No fares match. Try other dates, a bigger budget, or "Whole world".'),

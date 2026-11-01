@@ -2,7 +2,7 @@
 // Step 2 (only when clicked): "What to do here?" loads sights, food and the day-by-day plan.
 
 import { h, extLink, money, fmtDate, fmtDuration, stopsLabel } from './dom.js';
-import { dealBadge, compareLinks, trainLabel, dealLine, totalOf, priceSplit } from './board.js';
+import { dealBadge, compareLinks, trainLabel, dealLine, priceNumbers, priceSplit } from './board.js';
 
 const KIND_LABEL = { sight: 'Sight', museum: 'Museum', nature: 'Outdoors', activity: 'Do', food: 'Eat', nightlife: 'Drinks', shopping: 'Market & shops', flight: 'Travel' };
 
@@ -24,8 +24,8 @@ function boardingPass({ label, from, to, date, time, flight, bookUrl, showPrice 
     ),
     showPrice
       ? h('div', { class: 'pass-stub' },
-        h('span', { class: 'big-price' }, money(totalOf(flight), flight.currency)),
-        h('span', { class: 'dim' }, `${flight.returnDate ? 'return' : 'one way'}, door to door`),
+        h('span', { class: 'big-price' }, priceNumbers(flight)),
+        h('span', { class: 'dim' }, `${flight.returnDate ? 'return' : 'one way'}, per person`),
         priceSplit(flight) ? h('span', { class: 'price-split' }, priceSplit(flight)) : null,
         dealBadge(flight),
         extLink(bookUrl, { class: 'btn-primary' }, flight.live ? 'Book this fare' : 'Check this fare'),

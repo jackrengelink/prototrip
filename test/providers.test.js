@@ -121,6 +121,16 @@ test('bestPerRouteInCountry keeps one fare per airport pair inside the country',
   assert.deepEqual(kept.map((o) => `${o.origin}-${o.destination}-${o.deal.score}`).sort(), ['DUS-BCN-60', 'EIN-AGP-70', 'EIN-BCN-90']);
 });
 
+test('sorting uses the flight price, not flight + train', async () => {
+  const svc = createFlightService({ config: { ryanair: false }, cache: createCache(), logger: quiet });
+  const q = { origin: 'NL', origins: ['AMS', 'NRN'], country: 'ES', departDate: '2026-11-12', returnDate: '2026-11-18' };
+  const { offers } = await svc.searchAnywhere(q);
+  assert.ok(offers.every((o, i, arr) => i === 0 || arr[i - 1].price <= o.price));
+  const route = await svc.searchRoute({ ...q, destination: 'BCN', country: null });
+  assert.ok(route.offers.every((o, i, arr) => i === 0 || arr[i - 1].price <= o.price));
+  assert.ok(route.offers.every((o) => o.travelEur > 0), 'the train/bus cost stays a separate number');
+});
+
 test('country search ignores reach and returns every route into that country', async () => {
   const svc = createFlightService({ config: { ryanair: false }, cache: createCache(), logger: quiet });
   const res = await svc.searchAnywhere({ origin: 'NL', origins: ['AMS', 'DUS'], country: 'ES', reach: 'short', departDate: '2026-11-12', returnDate: '2026-11-18' });
@@ -135,11 +145,11 @@ test('travelpayouts ignores booking links that are not plain paths', () => {
   assert.match(normalizeTravelpayouts(row).bookingUrl, /^https:\/\/www\.aviasales\.com\/search\//);
 });
 
-test('flight service with no keys runs anywhere search in demo mode, best deals first', async () => {
+test('flight service with no keys runs anywhere search in demo mode, cheapest flight first', async () => {
   const svc = createFlightService({ config: { ryanair: false }, cache: createCache(), logger: quiet });
   assert.deepEqual(svc.providers, []);
   const res = await svc.searchAnywhere({ origin: 'LHR', departDate: '2026-11-12', returnDate: null });
-  assert.ok(res.offers[0].deal.score >= res.offers.at(-1).deal.score);
+  assert.ok(res.offers.every((o, i, arr) => i === 0 || arr[i - 1].price <= o.price));
 });
 
 test('wikipedia: classify, pick biggest articles, normalise popularity', () => {

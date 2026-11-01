@@ -32,6 +32,9 @@ export function coordsFor(offer) {
   };
 }
 
+/** Every flight list runs from the lowest flight price up; the train/bus to the airport doesn't count here. */
+export const byFlightPrice = (a, b) => a.price - b.price || b.deal.score - a.deal.score;
+
 /** Keep the cheapest copy when two providers return the same flight. */
 function dedupe(offers) {
   const seen = new Map();
@@ -142,14 +145,14 @@ export function createFlightService({ config, cache, directory = null, logger = 
 
   return {
     providers: live.map((p) => p.id),
-    /** Flights for one route (from one or many origins), cheapest first. */
+    /** Flights for one route (from one or many origins), cheapest flight first. */
     async searchRoute(query) {
       const res = await search('searchRoute', query);
-      return { ...res, offers: [...res.offers].sort((a, b) => (a.totalPrice ?? a.price) - (b.totalPrice ?? b.price)) };
+      return { ...res, offers: [...res.offers].sort(byFlightPrice) };
     },
     /**
      * "Anywhere": one fare per destination, filtered by reach. With query.country: every route into
-     * that country (the user chose it, so reach doesn't apply). Best deal first, same fare data either way.
+     * that country (the user chose it, so reach doesn't apply). Cheapest flight first, same fare data either way.
      */
     async searchAnywhere(query) {
       const res = await search('searchAnywhere', { ...query, destination: null });
@@ -158,7 +161,7 @@ export function createFlightService({ config, cache, directory = null, logger = 
         : applyReach(bestPerDestination(res.offers), query.reach || 'smart');
       return {
         ...res,
-        offers: offers.sort((a, b) => b.deal.score - a.deal.score || a.price - b.price),
+        offers: offers.sort(byFlightPrice),
         ...(query.country && { country: { code: query.country, name: countryName(query.country) } }),
       };
     },

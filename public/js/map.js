@@ -5,6 +5,7 @@
 // - Route map: the same route for one trip, on the trip screen.
 
 import { h, money } from './dom.js';
+import { priceNumbers } from './board.js';
 
 const L = window.L;
 
@@ -135,7 +136,7 @@ function routeLayers(offer, home, { emphasis = true } = {}) {
 function popupContent(offer, onPlan) {
   return h('div', { class: 'map-popup' },
     h('b', {}, offer.destinationName),
-    h('span', { class: 'map-popup-price' }, money(offer.price, offer.currency), h('small', {}, offer.returnDate ? ' return' : ' one way')),
+    h('span', { class: 'map-popup-price' }, priceNumbers(offer), h('small', {}, offer.returnDate ? ' return' : ' one way')),
     h('span', { class: 'map-popup-meta' }, offer.mode === 'ground'
       ? `${offer.deal?.label || ''} · ${offer.airline} from Enschede${offer.durationMin ? ` · ${Math.floor(offer.durationMin / 60)}h ${String(offer.durationMin % 60).padStart(2, '0')}m` : ''}`
       : `${offer.deal?.label || ''} · from ${offer.origin}${offer.distanceKm ? ` · ${offer.distanceKm.toLocaleString('en')} km` : ''}`),
@@ -223,7 +224,9 @@ export function createDealMap(el, { onSelect, onPlan }) {
       };
       if (points.length) {
         map.once('moveend', showPopup);
-        map.flyToBounds(L.latLngBounds(points), { padding: [60, 60], maxZoom: 7, duration: 0.8 });
+        // Jump instead of flying: an animated fly-to interrupted by scrolling can leave tiles and route misaligned.
+        map.stop();
+        map.fitBounds(L.latLngBounds(points), { padding: [60, 60], maxZoom: 7, animate: false });
       } else {
         showPopup();
       }

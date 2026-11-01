@@ -34,9 +34,9 @@ Two modes, switched with the tabs at the top of the search:
   - *Dutch only*: Schiphol, Eindhoven, Rotterdam, Groningen
   - *NL + German border* (the default): adds Münster/Osnabrück, Düsseldorf, Weeze and Cologne
   - *+ Belgium*: adds Brussels and Charleroi
-- **Door-to-door prices.** Every fare includes a rough return train or bus ticket from Enschede to the airport,
-  for example ~€30 to Weeze or ~€100 to Charleroi, and shows the split ("€46 flight + ~€30 train to NRN").
-  A €34 flight from Charleroi stops looking crazy once you add the trip to Belgium.
+- **Two numbers per fare.** The flight price, plus a rough return train or bus ticket from Enschede to the airport:
+  "€46 + €30" means a €46 flight and ~€30 to Weeze. Lists always run from the lowest flight price up. The deal label
+  still looks at both together, so a €34 flight from Charleroi (+ ~€100) doesn't count as crazy.
 - **A whole country as destination.** Type a country in *To* (or pick "Spain · all airports · ES") to see every route from
   your From airport(s) to every airport in that country: one row per airport pair, with *How far?* ignored.
 - **Flexible dates.** ±3 days around your dates; the trip length stays within a night.
