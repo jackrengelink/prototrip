@@ -154,7 +154,7 @@ function board(offers, data, ctx) {
     : data.country ? `Flights to ${data.country.name}`
       : ctx.anywhere ? `Departures from ${data.origin?.name || ''}` : `${offers.length} flights to ${offers[0]?.destinationName || 'your destination'}`;
   const subtitle = [
-    data.country ? `${offers.length} routes to ${new Set(offers.map((o) => o.destination)).size} airports, cheapest flight first`
+    data.country ? `${offers.length} flights to ${new Set(offers.map((o) => o.destination)).size} airports, cheapest flight first`
       : ctx.mode === 'ground' ? `${offers.length} destinations, cheapest for the distance first`
         : ctx.anywhere ? `${offers.length} destinations, cheapest flight first` : 'Cheapest flight first',
     data.demo ? 'Demo fares: add API keys for real prices' : null,

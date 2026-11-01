@@ -37,8 +37,10 @@ Two modes, switched with the tabs at the top of the search:
 - **Two numbers per fare.** The flight price, plus a rough return train or bus ticket from Enschede to the airport:
   "€46 + €30" means a €46 flight and ~€30 to Weeze. Lists always run from the lowest flight price up. The deal label
   still looks at both together, so a €34 flight from Charleroi (+ ~€100) doesn't count as crazy.
-- **A whole country as destination.** Type a country in *To* (or pick "Spain · all airports · ES") to see every route from
-  your From airport(s) to every airport in that country: one row per airport pair, with *How far?* ignored.
+- **A whole country as destination.** Type a country in *To* (or pick "Spain · all airports · ES") to see every flight we
+  can find from your From airport(s) to that country: one row per airline per route, with *How far?* ignored. Google
+  Flights fills in airlines like KLM and TAP, using 3–6 of the 250 monthly SerpApi searches per new country and date
+  (saved for 6 hours). Google's fares are for your exact dates; Ryanair's can be ±3 days.
 - **Flexible dates.** ±3 days around your dates; the trip length stays within a night.
 - **How far?**
   - *Europe-ish*: flights up to about 4.5 hours

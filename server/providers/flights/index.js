@@ -7,10 +7,16 @@ import { createTravelpayouts } from './travelpayouts.js';
 import { createRyanair } from './ryanair.js';
 import { scoreOffers } from '../../lib/deals.js';
 import { haversineKm } from '../../lib/geo.js';
-import { findAirport, homeAirports, countryName } from '../../data/airports.js';
-import { MINUTE } from '../../lib/cache.js';
+import { findAirport, homeAirports, countryName, airportsInCountry } from '../../data/airports.js';
+import { MINUTE, HOUR } from '../../lib/cache.js';
 
 const FLIGHT_TTL_MS = 30 * MINUTE;
+// Google Flights returns ~20 flights per search, so a country takes a few searches. They come out of
+// the 250-a-month SerpApi quota: keep the result longer, and never spend more than this per country.
+const GOOGLE_COUNTRY_TTL_MS = 6 * HOUR;
+const GOOGLE_ORIGINS_PER_SEARCH = 3;
+const GOOGLE_AIRPORTS_PER_SEARCH = 7;
+const GOOGLE_MAX_AIRPORT_GROUPS = 2;
 // Roughly a 4.5-hour flight from the Netherlands: all of Europe, the Canaries, Morocco, Istanbul.
 export const SHORT_HAUL_KM = 3600;
 
@@ -57,17 +63,37 @@ export function bestPerDestination(offers) {
   return [...best.values()];
 }
 
-/** For a whole country: the best fare for every from-airport/to-airport pair in that country. */
+/** For a whole country: the cheapest fare per airline on every from-airport/to-airport pair in it. */
 export function bestPerRouteInCountry(offers, country) {
   const best = new Map();
   for (const o of offers) {
     const place = findAirport(o.destination) || findAirport(o.destinationCity);
     if (place?.country !== country) continue;
-    const key = `${o.origin}-${o.destination}`;
+    const key = `${o.origin}-${o.destination}-${String(o.airline).toLowerCase()}`;
     const prev = best.get(key);
-    if (!prev || o.deal.score > prev.deal.score) best.set(key, o);
+    if (!prev || o.price < prev.price) best.set(key, o);
   }
   return [...best.values()];
+}
+
+const chunk = (list, size) => Array.from({ length: Math.ceil(list.length / size) }, (_, i) => list.slice(i * size, (i + 1) * size));
+
+/** Split a country search into Google searches: every group of origins against every group of airports. */
+export function countryBatches(origins, airports) {
+  const destinations = chunk(airports.filter((a) => !origins.includes(a)), GOOGLE_AIRPORTS_PER_SEARCH).slice(0, GOOGLE_MAX_AIRPORT_GROUPS);
+  return chunk(origins, GOOGLE_ORIGINS_PER_SEARCH).flatMap((o) => destinations.map((d) => ({ origins: o, destinations: d })));
+}
+
+/** Door-to-door costs, deal scores and map positions for raw fares. */
+function enrich(offers, { returnDate }) {
+  // Door-to-door: add the train/bus ticket from Enschede to the departure airport.
+  const withTravel = dedupe(offers).map((o) => {
+    const home = HOME_INFO.get(o.origin);
+    const travelEur = home ? (returnDate ? home.travelEur : Math.round(home.travelEur / 2)) : 0;
+    return { ...o, travelMin: home?.travelMin ?? null, travelEur, totalPrice: Math.round((o.price + travelEur) * 100) / 100 };
+  });
+  return scoreOffers(withTravel, { distanceFor, roundTrip: Boolean(returnDate) })
+    .map((o) => ({ ...o, coords: coordsFor(o) }));
 }
 
 /**
@@ -126,20 +152,32 @@ export function createFlightService({ config, cache, directory = null, logger = 
     const failed = [...new Set(perOrigin.flatMap((r) => r.failed))];
     const isDemo = perOrigin.every((r) => r.demo || r.offers.length === 0) && perOrigin.some((r) => r.demo);
     const offers = perOrigin.flatMap((r) => r.offers).filter((o) => Number.isFinite(o.price) && o.price > 0);
-    // Door-to-door: add the train/bus ticket from Enschede to the departure airport.
-    const withTravel = dedupe(offers).map((o) => {
-      const home = HOME_INFO.get(o.origin);
-      const travelEur = home ? (returnDate ? home.travelEur : Math.round(home.travelEur / 2)) : 0;
-      return { ...o, travelMin: home?.travelMin ?? null, travelEur, totalPrice: Math.round((o.price + travelEur) * 100) / 100 };
-    });
-    const scored = scoreOffers(withTravel, { distanceFor, roundTrip: Boolean(returnDate) })
-      .map((o) => ({ ...o, coords: coordsFor(o) }));
+    const scored = enrich(offers, { returnDate });
 
     const warnings = [...new Set(failed)].map((id) => `${id} is unavailable right now`);
     if (isDemo && failed.length > 0) warnings.push('No live fares found, so these are demo prices');
     const result = { offers: scored, warnings, demo: isDemo };
     // Never cache a result that came from a failure, or one outage sticks around for 30 minutes.
     if (failed.length === 0) cache.set(key, result, FLIGHT_TTL_MS);
+    return result;
+  }
+
+  /** Google Flights for a whole country: the source that also knows KLM, TAP and the rest. */
+  async function googleCountry(query, seenAirports) {
+    const google = live.find((p) => typeof p.searchMany === 'function');
+    if (!google) return { offers: [], warnings: [] };
+    const { country, departDate, returnDate } = query;
+    const origins = query.origins?.length ? query.origins : [query.origin];
+    const key = `flights:google-country:${country}:${origins.join(',')}:${departDate}:${returnDate}`;
+    const cached = cache.get(key);
+    if (cached) return cached;
+    const batches = countryBatches(origins, airportsInCountry(country, seenAirports));
+    const results = await Promise.allSettled(batches.map((b) => google.searchMany({ ...b, departDate, returnDate })));
+    const failed = results.filter((r) => r.status === 'rejected');
+    failed.forEach((r) => logger.warn(`[flights] google country search failed: ${r.reason?.message}`));
+    const offers = enrich(results.flatMap((r) => (r.status === 'fulfilled' ? r.value : [])), { returnDate });
+    const result = { offers, warnings: failed.length ? ['Google Flights is unavailable right now, so this list may be incomplete'] : [] };
+    if (failed.length === 0) cache.set(key, result, GOOGLE_COUNTRY_TTL_MS);
     return result;
   }
 
@@ -151,18 +189,22 @@ export function createFlightService({ config, cache, directory = null, logger = 
       return { ...res, offers: [...res.offers].sort(byFlightPrice) };
     },
     /**
-     * "Anywhere": one fare per destination, filtered by reach. With query.country: every route into
-     * that country (the user chose it, so reach doesn't apply). Cheapest flight first, same fare data either way.
+     * "Anywhere": one fare per destination, filtered by reach. Cheapest flight first.
+     * With query.country: every airline on every route into that country (the user chose it, so
+     * reach doesn't apply), adding Google Flights to the Anywhere data.
      */
     async searchAnywhere(query) {
       const res = await search('searchAnywhere', { ...query, destination: null });
-      const offers = query.country
-        ? bestPerRouteInCountry(res.offers, query.country)
-        : applyReach(bestPerDestination(res.offers), query.reach || 'smart');
+      if (!query.country) {
+        return { ...res, offers: applyReach(bestPerDestination(res.offers), query.reach || 'smart').sort(byFlightPrice) };
+      }
+      const seen = bestPerRouteInCountry(res.offers, query.country);
+      const google = await googleCountry(query, seen.map((o) => o.destination));
       return {
         ...res,
-        offers: offers.sort(byFlightPrice),
-        ...(query.country && { country: { code: query.country, name: countryName(query.country) } }),
+        offers: bestPerRouteInCountry([...seen, ...google.offers], query.country).sort(byFlightPrice),
+        warnings: [...res.warnings, ...google.warnings],
+        country: { code: query.country, name: countryName(query.country) },
       };
     },
   };

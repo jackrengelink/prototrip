@@ -48,31 +48,41 @@ export function normalizeSerpItinerary(it, { departDate, returnDate, typicalRang
 }
 
 export function createSerpApi({ apiKey }) {
+  /** One Google Flights search. Both ids may be comma-separated airport lists. */
+  async function fetchFlights({ origin, destination, departDate, returnDate }) {
+    const qs = new URLSearchParams({
+      engine: 'google_flights',
+      departure_id: origin,
+      arrival_id: destination,
+      outbound_date: departDate,
+      type: returnDate ? '1' : '2',
+      currency: 'EUR',
+      hl: 'en',
+      api_key: apiKey,
+      ...(returnDate && { return_date: returnDate }),
+    });
+    const body = await fetchJson('serpapi', `${BASE}?${qs}`, { timeoutMs: 25_000 });
+    // Google answering "no flights" for a set of airports is an empty result, not an outage.
+    if (body?.error && !/no results|hasn't returned any results/i.test(body.error)) throw new Error(`serpapi: ${body.error}`);
+    const range = body?.price_insights?.typical_price_range;
+    const ctx = {
+      departDate,
+      returnDate,
+      typicalRange: Array.isArray(range) ? range : null,
+      searchUrl: body?.search_metadata?.google_flights_url || comparisonLinks({ origin, destination, departDate, returnDate })[1].url,
+    };
+    const all = [...(body?.best_flights || []), ...(body?.other_flights || [])];
+    return all.map((it, i) => normalizeSerpItinerary(it, ctx, i)).filter(Boolean);
+  }
+
   return {
     id: 'serpapi',
-    async searchRoute({ origin, destination, departDate, returnDate }) {
-      const qs = new URLSearchParams({
-        engine: 'google_flights',
-        departure_id: origin,
-        arrival_id: destination,
-        outbound_date: departDate,
-        type: returnDate ? '1' : '2',
-        currency: 'EUR',
-        hl: 'en',
-        api_key: apiKey,
-        ...(returnDate && { return_date: returnDate }),
-      });
-      const body = await fetchJson('serpapi', `${BASE}?${qs}`, { timeoutMs: 25_000 });
-      if (body?.error) throw new Error(`serpapi: ${body.error}`);
-      const range = body?.price_insights?.typical_price_range;
-      const ctx = {
-        departDate,
-        returnDate,
-        typicalRange: Array.isArray(range) ? range : null,
-        searchUrl: body?.search_metadata?.google_flights_url || comparisonLinks({ origin, destination, departDate, returnDate })[1].url,
-      };
-      const all = [...(body?.best_flights || []), ...(body?.other_flights || [])];
-      return all.map((it, i) => normalizeSerpItinerary(it, ctx, i)).filter(Boolean);
+    searchRoute: ({ origin, destination, departDate, returnDate }) => fetchFlights({ origin, destination, departDate, returnDate }),
+    /** Many airports both ways in one search (costs one search; Google returns about 20 flights). */
+    async searchMany({ origins, destinations, departDate, returnDate }) {
+      const offers = await fetchFlights({ origin: origins.join(','), destination: destinations.join(','), departDate, returnDate });
+      // A "typical price" for a mix of routes says nothing about any single one of them.
+      return offers.map((o) => ({ ...o, typicalRange: null }));
     },
     // Google Flights has no "anywhere" endpoint in SerpApi's flights engine.
     searchAnywhere: null,

@@ -20,6 +20,7 @@ export function buildDirectory(airports, cities) {
     const city = cityByCode.get(a.city_code);
     out.push({
       iata: a.code,
+      kind: 'airport',
       name: city?.name_translations?.en || city?.name || a.name_translations?.en || a.name,
       country: a.country_code,
       city: a.city_code || a.code,

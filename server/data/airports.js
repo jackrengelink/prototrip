@@ -191,6 +191,14 @@ export function destinationCities() {
   return [...BY_CITY.values()].filter((a) => !HOME_CODES.has(a.iata));
 }
 
+/** Airport codes in a country: the ones already seen in fares first, then the major ones, then the rest. */
+export function airportsInCountry(country, preferred = []) {
+  const curated = AIRPORTS.filter((a) => a.country === country).map((a) => a.iata);
+  const others = [...EXTRA.values()].filter((a) => a.country === country && a.kind === 'airport').map((a) => a.iata);
+  const known = new Set([...curated, ...others]);
+  return [...new Set([...preferred.filter((c) => known.has(c)), ...curated, ...others])];
+}
+
 const REGION_NAMES = new Intl.DisplayNames(['en'], { type: 'region' });
 const COUNTRY_ALIASES = { uk: 'GB', england: 'GB', scotland: 'GB', 'great britain': 'GB', usa: 'US', america: 'US', 'united states of america': 'US', holland: 'NL', czech: 'CZ', czechia: 'CZ' };
 

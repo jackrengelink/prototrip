@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createDemoFlights, seededRandom } from '../server/providers/flights/demo.js';
 import { normalizeTravelpayouts, createTravelpayouts } from '../server/providers/flights/travelpayouts.js';
 import { normalizeSerpItinerary, createSerpApi } from '../server/providers/flights/serpapi.js';
-import { createFlightService, applyReach, bestPerDestination, bestPerRouteInCountry } from '../server/providers/flights/index.js';
+import { createFlightService, applyReach, bestPerDestination, bestPerRouteInCountry, countryBatches } from '../server/providers/flights/index.js';
 import { airlineName } from '../server/providers/flights/airlines.js';
 import { classifyArticle, pickCandidates, normalizeWikipedia } from '../server/providers/places/wikipedia.js';
 import { kindFromCategories, normalizeGeoapify } from '../server/providers/places/geoapify.js';
@@ -114,11 +114,48 @@ test('applyReach and bestPerDestination', () => {
   assert.deepEqual(best.map((o) => o.id), ['y']);
 });
 
-test('bestPerRouteInCountry keeps one fare per airport pair inside the country', () => {
-  const mk = (origin, destination, score) => ({ origin, destination, destinationCity: destination, deal: { score } });
-  const offers = [mk('EIN', 'BCN', 50), mk('EIN', 'BCN', 90), mk('DUS', 'BCN', 60), mk('EIN', 'AGP', 70), mk('EIN', 'FCO', 99)];
+test('bestPerRouteInCountry keeps the cheapest fare per airline on each route in the country', () => {
+  const mk = (origin, destination, airline, price) => ({ origin, destination, destinationCity: destination, airline, price });
+  const offers = [mk('EIN', 'BCN', 'Ryanair', 90), mk('EIN', 'BCN', 'Ryanair', 50), mk('EIN', 'BCN', 'Transavia', 70), mk('DUS', 'BCN', 'KLM', 60), mk('EIN', 'FCO', 'Ryanair', 9)];
   const kept = bestPerRouteInCountry(offers, 'ES');
-  assert.deepEqual(kept.map((o) => `${o.origin}-${o.destination}-${o.deal.score}`).sort(), ['DUS-BCN-60', 'EIN-AGP-70', 'EIN-BCN-90']);
+  assert.deepEqual(kept.map((o) => `${o.origin}-${o.destination}-${o.airline}-${o.price}`).sort(),
+    ['DUS-BCN-KLM-60', 'EIN-BCN-Ryanair-50', 'EIN-BCN-Transavia-70']);
+});
+
+test('countryBatches caps the Google searches a country can cost', () => {
+  const origins = ['AMS', 'FMO', 'DUS', 'EIN', 'NRN', 'RTM', 'GRQ', 'CGN'];
+  const small = countryBatches(origins, ['LIS', 'OPO', 'FAO']);
+  assert.equal(small.length, 3);
+  assert.ok(small.every((b) => b.origins.length <= 3));
+  const big = countryBatches(origins, Array.from({ length: 40 }, (_, i) => `A${String(i).padStart(2, '0')}`));
+  assert.equal(big.length, 6);
+  assert.ok(big.every((b) => b.destinations.length <= 7));
+  assert.ok(!countryBatches(['DUS'], ['DUS', 'BER'])[0].destinations.includes('DUS'), 'never to the airport you leave from');
+});
+
+test('country search adds Google Flights, caches it, and survives a Google failure', async (t) => {
+  const itinerary = (from, to, airline, price) => ({
+    price, flights: [{ departure_airport: { id: from, time: '2027-01-29 10:00' }, arrival_airport: { id: to, time: '2027-01-29 13:00' }, airline, flight_number: `${airline} ${price}` }],
+  });
+  let calls = 0;
+  const mock = t.mock.method(globalThis, 'fetch', async (url) => {
+    calls++;
+    const u = new URL(String(url));
+    assert.match(u.searchParams.get('arrival_id'), /LIS,OPO|OPO,LIS|LIS/);
+    return new Response(JSON.stringify({ best_flights: [itinerary('AMS', 'LIS', 'KLM', 180), itinerary('AMS', 'LIS', 'TAP', 170)] }), { status: 200 });
+  });
+  const svc = createFlightService({ config: { ryanair: false, serpapiKey: 'k' }, cache: createCache(), logger: quiet });
+  const q = { origin: 'NL', origins: ['AMS'], country: 'PT', departDate: '2027-01-29', returnDate: '2027-02-02' };
+  const res = await svc.searchAnywhere(q);
+  assert.deepEqual(res.offers.filter((o) => o.source === 'serpapi').map((o) => o.airline), ['TAP', 'KLM']);
+  const used = calls;
+  await svc.searchAnywhere(q);
+  assert.equal(calls, used, 'second search comes from the cache');
+
+  mock.mock.mockImplementation(async () => new Response('down', { status: 503 }));
+  const svc2 = createFlightService({ config: { ryanair: false, serpapiKey: 'k' }, cache: createCache(), logger: quiet });
+  const failed = await svc2.searchAnywhere(q);
+  assert.match(failed.warnings.join(), /may be incomplete/);
 });
 
 test('sorting uses the flight price, not flight + train', async () => {
