@@ -74,6 +74,13 @@ function createMap(el) {
   });
   // Drop the "Leaflet" prefix; the tile credit itself stays (Esri's free tiles require it).
   map.attributionControl.setPrefix(false);
+  // Leaflet stops wheel events on popups and buttons, so the page would scroll: pass them to the map to zoom.
+  el.addEventListener('wheel', (event) => {
+    if (!event.target.closest?.('.leaflet-popup, .leaflet-control')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    el.dispatchEvent(new WheelEvent('wheel', event));
+  }, { capture: true, passive: false });
   const labelsPane = map.createPane('labels');
   labelsPane.style.zIndex = '450';
   labelsPane.style.pointerEvents = 'none';
