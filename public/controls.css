@@ -44,6 +44,20 @@
   border-radius: 0 0 var(--radius) var(--radius);
   box-shadow: var(--shadow);
 }
+/* Slim scrollbars in the theme's colours. Firefox only understands the standard properties. */
+@supports not selector(::-webkit-scrollbar) {
+  .combo-list, .weather { scrollbar-width: thin; scrollbar-color: var(--cyan) transparent; }
+}
+.combo-list::-webkit-scrollbar, .weather::-webkit-scrollbar { width: 6px; height: 6px; }
+.combo-list::-webkit-scrollbar-track, .weather::-webkit-scrollbar-track { background: transparent; }
+.combo-list::-webkit-scrollbar-thumb, .weather::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 999px; }
+.combo-list::-webkit-scrollbar-thumb:hover, .weather::-webkit-scrollbar-thumb:hover { background: var(--cyan); }
+.combo-list::-webkit-scrollbar-button, .weather::-webkit-scrollbar-button { display: none; }
+
+/* Budget is a typed number: no browser arrows. */
+#budget { -moz-appearance: textfield; appearance: textfield; }
+#budget::-webkit-outer-spin-button, #budget::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
 .combo-option {
   display: flex;
   align-items: center;
