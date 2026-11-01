@@ -7,7 +7,7 @@ import { createTravelpayouts } from './travelpayouts.js';
 import { createRyanair } from './ryanair.js';
 import { scoreOffers } from '../../lib/deals.js';
 import { haversineKm } from '../../lib/geo.js';
-import { findAirport, homeAirports } from '../../data/airports.js';
+import { findAirport, homeAirports, countryName } from '../../data/airports.js';
 import { MINUTE } from '../../lib/cache.js';
 
 const FLIGHT_TTL_MS = 30 * MINUTE;
@@ -50,6 +50,19 @@ export function bestPerDestination(offers) {
     const key = o.destinationCity || o.destination;
     const prev = best.get(key);
     if (!prev || o.deal.score > prev.deal.score || (o.deal.score === prev.deal.score && (o.totalPrice ?? o.price) < (prev.totalPrice ?? prev.price))) best.set(key, o);
+  }
+  return [...best.values()];
+}
+
+/** For a whole country: the best fare for every from-airport/to-airport pair in that country. */
+export function bestPerRouteInCountry(offers, country) {
+  const best = new Map();
+  for (const o of offers) {
+    const place = findAirport(o.destination) || findAirport(o.destinationCity);
+    if (place?.country !== country) continue;
+    const key = `${o.origin}-${o.destination}`;
+    const prev = best.get(key);
+    if (!prev || o.deal.score > prev.deal.score) best.set(key, o);
   }
   return [...best.values()];
 }
@@ -134,11 +147,20 @@ export function createFlightService({ config, cache, directory = null, logger = 
       const res = await search('searchRoute', query);
       return { ...res, offers: [...res.offers].sort((a, b) => (a.totalPrice ?? a.price) - (b.totalPrice ?? b.price)) };
     },
-    /** One fare per destination, best deal first, filtered by reach. */
+    /**
+     * "Anywhere": one fare per destination, filtered by reach. With query.country: every route into
+     * that country (the user chose it, so reach doesn't apply). Best deal first, same fare data either way.
+     */
     async searchAnywhere(query) {
-      const res = await search('searchAnywhere', query);
-      const offers = applyReach(bestPerDestination(res.offers), query.reach || 'smart');
-      return { ...res, offers: offers.sort((a, b) => b.deal.score - a.deal.score || a.price - b.price) };
+      const res = await search('searchAnywhere', { ...query, destination: null });
+      const offers = query.country
+        ? bestPerRouteInCountry(res.offers, query.country)
+        : applyReach(bestPerDestination(res.offers), query.reach || 'smart');
+      return {
+        ...res,
+        offers: offers.sort((a, b) => b.deal.score - a.deal.score || a.price - b.price),
+        ...(query.country && { country: { code: query.country, name: countryName(query.country) } }),
+      };
     },
   };
 }

@@ -37,6 +37,8 @@ Two modes, switched with the tabs at the top of the search:
 - **Door-to-door prices.** Every fare includes a rough return train or bus ticket from Enschede to the airport,
   for example ~€30 to Weeze or ~€100 to Charleroi, and shows the split ("€46 flight + ~€30 train to NRN").
   A €34 flight from Charleroi stops looking crazy once you add the trip to Belgium.
+- **A whole country as destination.** Type a country in *To* (or pick "Spain · all airports · ES") to see every route from
+  your From airport(s) to every airport in that country: one row per airport pair, with *How far?* ignored.
 - **Flexible dates.** ±3 days around your dates; the trip length stays within a night.
 - **How far?**
   - *Europe-ish*: flights up to about 4.5 hours

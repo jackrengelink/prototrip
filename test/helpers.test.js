@@ -4,7 +4,7 @@ import { haversineKm, centroid } from '../server/lib/geo.js';
 import { createCache } from '../server/lib/cache.js';
 import { comparisonLinks, aviasalesSearchUrl } from '../server/lib/links.js';
 import { parseSearch, parseDate, parseInterests, parseBudget, ValidationError } from '../server/lib/validate.js';
-import { findAirport, searchAirports, destinationCities } from '../server/data/airports.js';
+import { findAirport, searchAirports, searchCountries, countryName, destinationCities } from '../server/data/airports.js';
 import { fetchJson, UpstreamError } from '../server/lib/http.js';
 
 test('haversineKm: London to Rome is about 1,430 km', () => {
@@ -46,7 +46,7 @@ test('aviasalesSearchUrl encodes route and dates', () => {
 test('parseSearch accepts a valid search and normalises it', () => {
   const today = Date.UTC(2026, 9, 18);
   const q = parseSearch(new URLSearchParams('origin=jfk&destination=anywhere&departDate=2026-11-01&returnDate=2026-11-05&interests=food,FOOD,bogus&budget=499.6'), { today });
-  assert.deepEqual(q, { origin: 'JFK', origins: ['JFK'], destination: null, departDate: '2026-11-01', returnDate: '2026-11-05', budget: 500, interests: ['food'], reach: 'smart', flex: 3, airports: 'near' });
+  assert.deepEqual(q, { origin: 'JFK', origins: ['JFK'], destination: null, country: null, departDate: '2026-11-01', returnDate: '2026-11-05', budget: 500, interests: ['food'], reach: 'smart', flex: 3, airports: 'near' });
 });
 
 test('parseSearch expands NL into the home airports and validates reach', () => {
@@ -62,6 +62,23 @@ test('parseSearch expands NL into the home airports and validates reach', () => 
   assert.equal(q.reach, 'world');
   assert.throws(() => parseSearch(new URLSearchParams('origin=NL&destination=AMS&departDate=2026-11-01'), { today }), /differ/);
   assert.throws(() => parseSearch(new URLSearchParams('origin=NL&departDate=2026-11-01&reach=moon'), { today }), /reach/);
+});
+
+test('parseSearch accepts a whole country as destination', () => {
+  const today = Date.UTC(2026, 9, 18);
+  const q = parseSearch(new URLSearchParams('origin=EIN&destination=country:es&departDate=2026-11-01'), { today });
+  assert.equal(q.country, 'ES');
+  assert.equal(q.destination, null);
+  assert.throws(() => parseSearch(new URLSearchParams('origin=EIN&destination=country:spain&departDate=2026-11-01'), { today }), /destination/);
+});
+
+test('searchCountries finds countries by name and alias, never for one letter', () => {
+  assert.deepEqual(searchCountries('spain'), [{ type: 'country', code: 'ES', name: 'Spain', exact: true }]);
+  assert.equal(searchCountries('uk')[0].code, 'GB');
+  assert.equal(searchCountries('uk')[0].exact, true);
+  assert.equal(searchCountries('ital')[0].exact, false);
+  assert.deepEqual(searchCountries('s'), []);
+  assert.equal(countryName('PT'), 'Portugal');
 });
 
 test('parseDate rejects impossible calendar dates', () => {

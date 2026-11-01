@@ -2,7 +2,7 @@
 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { searchAirports, findAirport, homeAirports, HOME } from './data/airports.js';
+import { searchAirports, searchCountries, findAirport, homeAirports, HOME } from './data/airports.js';
 import { parseSearch, parseStay, parseGroundSearch, parseCityId, ValidationError } from './lib/validate.js';
 import { comparisonLinks } from './lib/links.js';
 import { planTrip, planGroundTrip, exploreTrip } from './trip.js';
@@ -99,7 +99,11 @@ export function createApp({ config, flights, ground, places, weather, logger = c
       demoMode: flights.providers.length === 0,
       home: { ...HOME, airports: homeAirports() },
     }),
-    '/api/airports': async (params) => searchAirports(params.get('q')),
+    // The To field also offers whole countries (countries=1); the From field doesn't.
+    '/api/airports': async (params) => [
+      ...(params.get('countries') === '1' ? searchCountries(params.get('q')) : []),
+      ...searchAirports(params.get('q')),
+    ],
     '/api/deals': async (params) => {
       if (params.get('mode') === 'ground') {
         const q = parseGroundSearch(params);

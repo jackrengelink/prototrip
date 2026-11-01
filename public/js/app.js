@@ -2,7 +2,7 @@
 // All search state lives in the URL, so every view can be shared or bookmarked.
 
 import { h, isoPlusDays } from './dom.js';
-import { getJson, resolveCode, HOME_CODE } from './api.js';
+import { getJson, resolveCode, resolveDestination, countryOf, countryLabel, HOME_CODE } from './api.js';
 import { renderBoard, markSelected } from './board.js';
 import { createDealMap, createRouteMap } from './map.js';
 import { renderTrip, renderGroundTrip, renderExplore } from './trip.js';
@@ -14,6 +14,8 @@ const INTERESTS = [
 const DEFAULT_INTERESTS = ['history', 'food', 'nightlife'];
 const HOME_LABEL = `Netherlands & nearby · ${HOME_CODE}`;
 const AUTOCOMPLETE_DELAY_MS = 180;
+const BOARD_LIMIT = 80;
+const COUNTRY_LIMIT = 200; // a country shows every route, so it can run longer
 const THEME_KEY = 'prototrip-theme';
 const SOURCE_NAMES = { ryanair: 'Ryanair', travelpayouts: 'Aviasales', serpapi: 'Google Flights' };
 
@@ -21,7 +23,7 @@ const $ = (id) => document.getElementById(id);
 const els = {
   form: $('search-form'), origin: $('origin'), destination: $('destination'),
   departDate: $('departDate'), returnDate: $('returnDate'), budget: $('budget'), flex: $('flex'), domestic: $('domestic'),
-  chips: $('interest-chips'), airportList: $('airport-list'), results: $('results'),
+  chips: $('interest-chips'), airportList: $('airport-list'), destinationList: $('destination-list'), results: $('results'),
   list: $('results-list'), mapEl: $('deal-map'), mapTitle: $('map-title'), mapClear: $('map-clear'),
   trip: $('trip'), notice: $('notice'), status: $('status-chip'), theme: $('theme-toggle'),
   tabs: [...document.querySelectorAll('.mode-tab')],
@@ -78,18 +80,20 @@ function setModeUi(mode) {
   document.body.dataset.mode = mode;
 }
 
-/** Suggest airports as the user types. The Netherlands group is always offered first. */
-function wireAutocomplete(input) {
+const displayDestination = (d) => (countryOf(d) ? countryLabel(countryOf(d)) : d);
+
+/** Suggest places as the user types: From offers the home group first, To offers whole countries first. */
+function wireAutocomplete(input, list, { countries = false } = {}) {
   let timer;
   input.addEventListener('input', () => {
     clearTimeout(timer);
     const q = input.value.trim();
     if (q.length < 2) return;
     timer = setTimeout(async () => {
-      const matches = await getJson('/api/airports', { q }).catch(() => []);
-      els.airportList.replaceChildren(
-        h('option', { value: HOME_LABEL }),
-        ...matches.map((a) => h('option', { value: `${a.name} · ${a.iata}` })));
+      const matches = await getJson('/api/airports', { q, countries: countries ? '1' : '' }).catch(() => []);
+      list.replaceChildren(
+        ...(countries ? [] : [h('option', { value: HOME_LABEL })]),
+        ...matches.map((m) => h('option', { value: m.type === 'country' ? countryLabel(m.code, m.name) : `${m.name} · ${m.iata}` })));
     }, AUTOCOMPLETE_DELAY_MS);
   });
 }
@@ -151,6 +155,7 @@ function mapTitle() {
     return `${from} → ${selected.destinationName} · ${selected.deal?.label || ''}`;
   }
   if (els.mapEl.classList.contains('is-outdated')) return 'Restart ProtoTrip to see trips on the map';
+  if (lastDeals?.data?.country) return `All flights to ${lastDeals.data.country.name}`;
   return boardState?.mode === 'ground' ? 'Everywhere by bus & train from Enschede' : 'All flight deals on the map';
 }
 
@@ -172,9 +177,11 @@ function drawBoard(state) {
   const { data } = lastDeals;
   boardState = state;
   const onlyCrazy = state.crazy === '1';
+  const limit = data.country ? COUNTRY_LIMIT : BOARD_LIMIT;
   renderBoard(els.list, data, {
     mode: state.mode,
-    anywhere: state.mode === 'ground' || !state.destination,
+    anywhere: state.mode === 'ground' || !state.destination || Boolean(countryOf(state.destination)),
+    limit,
     onlyCrazy,
     home,
     onSelect: (offer) => selectOffer(offer, 'list'),
@@ -185,7 +192,7 @@ function drawBoard(state) {
       drawBoard(next);
     },
   });
-  const shown = (onlyCrazy ? data.offers.filter((o) => o.deal?.tier === 'crazy') : data.offers).slice(0, 80);
+  const shown = (onlyCrazy ? data.offers.filter((o) => o.deal?.tier === 'crazy') : data.offers).slice(0, limit);
   // A server started before the map existed sends fares without coordinates: say so instead of an empty map.
   els.mapEl.classList.toggle('is-outdated', shown.length > 0 && !shown.some((o) => o.coords?.destination));
   const map = getDealMap();
@@ -201,7 +208,8 @@ async function runSearch(state) {
   els.results.hidden = false;
   selected = null;
   const msg = state.mode === 'ground' ? 'Finding every bus & train trip from Enschede…'
-    : state.destination ? 'Comparing fares from every nearby airport…' : 'Scanning every departure from NL & nearby for crazy deals…';
+    : countryOf(state.destination) ? 'Finding every flight to that country…'
+      : state.destination ? 'Comparing fares from every nearby airport…' : 'Scanning every departure from NL & nearby for crazy deals…';
   els.list.replaceChildren(loading(msg));
   showNotice('');
   try {
@@ -307,7 +315,7 @@ async function onSubmit(event) {
     if (mode === 'fly') {
       const origin = await resolveCode(els.origin.value || HOME_CODE);
       const destText = els.destination.value.trim();
-      const destination = destText && destText.toLowerCase() !== 'anywhere' ? await resolveCode(destText) : '';
+      const destination = destText && destText.toLowerCase() !== 'anywhere' ? await resolveDestination(destText) : '';
       state = { ...base, origin, destination, reach: radioValue('reach', 'smart'), airports: radioValue('airports', 'near'), flex: els.flex.checked ? '3' : '0' };
     }
     writeUrlState(state);
@@ -322,7 +330,7 @@ async function onSubmit(event) {
 function applyState(state) {
   setModeUi(state.mode);
   els.origin.value = displayCode(state.origin);
-  els.destination.value = state.destination;
+  els.destination.value = displayDestination(state.destination);
   els.departDate.value = state.departDate;
   els.returnDate.value = state.returnDate;
   els.budget.value = state.budget;
@@ -378,8 +386,8 @@ async function init() {
     if (!els.airportList.children.length) els.airportList.replaceChildren(h('option', { value: HOME_LABEL }));
   });
   for (const tab of els.tabs) tab.addEventListener('click', () => switchMode(tab.dataset.mode));
-  wireAutocomplete(els.origin);
-  wireAutocomplete(els.destination);
+  wireAutocomplete(els.origin, els.airportList);
+  wireAutocomplete(els.destination, els.destinationList, { countries: true });
   els.form.addEventListener('submit', onSubmit);
   els.mapClear.addEventListener('click', () => selectOffer(null));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && selected) selectOffer(null); });

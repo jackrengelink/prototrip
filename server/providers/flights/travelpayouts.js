@@ -78,6 +78,7 @@ export function createTravelpayouts({ token, marker = '' }) {
       const rows = await query({
         origin,
         unique: 'true',
+        limit: '1000', // the default top 100 can miss a whole country's airports
         one_way: String(!returnDate),
         departure_at: departDate.slice(0, 7),
         ...(returnDate && { return_at: returnDate.slice(0, 7) }),

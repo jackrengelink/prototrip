@@ -87,7 +87,9 @@ export function parseSearch(params, opts = {}) {
   if (!AIRPORT_GROUPS[airports]) throw new ValidationError('airports must be nl, near or all');
   const origins = origin === HOME.code ? homeAirportCodes(airports) : [origin];
   const rawDest = String(params.get('destination') || '').trim().toUpperCase();
-  const destination = rawDest === '' || rawDest === 'ANYWHERE' ? null : parseIata(rawDest, 'destination');
+  // "country:ES" = every airport in that country.
+  const country = /^COUNTRY:([A-Z]{2})$/.exec(rawDest)?.[1] || null;
+  const destination = country || rawDest === '' || rawDest === 'ANYWHERE' ? null : parseIata(rawDest, 'destination');
   if (destination && origins.includes(destination)) throw new ValidationError('origin and destination must differ');
 
   const departDate = parseDate(params.get('departDate'), 'departDate', opts);
@@ -101,6 +103,7 @@ export function parseSearch(params, opts = {}) {
     origin,
     origins,
     destination,
+    country,
     departDate,
     returnDate,
     budget: parseBudget(params.get('budget')),

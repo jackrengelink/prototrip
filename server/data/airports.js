@@ -191,6 +191,37 @@ export function destinationCities() {
   return [...BY_CITY.values()].filter((a) => !HOME_CODES.has(a.iata));
 }
 
+const REGION_NAMES = new Intl.DisplayNames(['en'], { type: 'region' });
+const COUNTRY_ALIASES = { uk: 'GB', england: 'GB', scotland: 'GB', 'great britain': 'GB', usa: 'US', america: 'US', 'united states of america': 'US', holland: 'NL', czech: 'CZ', czechia: 'CZ' };
+
+/** English country name for a two-letter code. */
+export function countryName(code) {
+  try {
+    return REGION_NAMES.of(String(code).toUpperCase());
+  } catch {
+    return String(code);
+  }
+}
+
+/** Every country that has an airport we know, matched by name or a common alias. Best match first. */
+export function searchCountries(query, limit = 3) {
+  const q = String(query || '').trim().toLowerCase();
+  if (q.length < 2) return [];
+  const codes = new Set([...AIRPORTS, ...EXTRA.values()].map((a) => a.country).filter((c) => /^[A-Z]{2}$/.test(c || '')));
+  const alias = COUNTRY_ALIASES[q];
+  return [...codes]
+    .map((code) => {
+      const name = countryName(code);
+      const lower = name.toLowerCase();
+      const exact = code === alias || lower === q;
+      return { type: 'country', code, name, exact, rank: exact ? 3 : lower.startsWith(q) ? 2 : lower.includes(q) ? 1 : 0 };
+    })
+    .filter((c) => c.rank > 0)
+    .sort((a, b) => b.rank - a.rank || a.name.localeCompare(b.name))
+    .slice(0, limit)
+    .map(({ rank, ...c }) => c);
+}
+
 export function searchAirports(query, limit = 8) {
   const q = String(query || '').trim().toLowerCase();
   if (!q) return [];

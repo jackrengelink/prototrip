@@ -145,9 +145,11 @@ function row(offer, index, ctx) {
 
 function board(offers, data, ctx) {
   const title = ctx.mode === 'ground' ? 'Bus & train from Enschede'
-    : ctx.anywhere ? `Departures from ${data.origin?.name || ''}` : `${offers.length} flights to ${offers[0]?.destinationName || 'your destination'}`;
+    : data.country ? `Flights to ${data.country.name}`
+      : ctx.anywhere ? `Departures from ${data.origin?.name || ''}` : `${offers.length} flights to ${offers[0]?.destinationName || 'your destination'}`;
   const subtitle = [
-    ctx.anywhere ? `${offers.length} destinations, cheapest for the distance first` : 'Cheapest first',
+    data.country ? `${offers.length} routes to ${new Set(offers.map((o) => o.destination)).size} airports, best deals first`
+      : ctx.anywhere ? `${offers.length} destinations, cheapest for the distance first` : 'Cheapest first',
     data.demo ? 'Demo fares: add API keys for real prices' : null,
   ].filter(Boolean).join(' · ');
   return h('div', { class: 'board', role: 'table', 'aria-label': title },
@@ -155,7 +157,7 @@ function board(offers, data, ctx) {
     h('div', { class: 'board-cols', role: 'row' },
       ['Destination', 'From', 'When', ctx.mode === 'ground' ? 'How' : 'Airline', ctx.mode === 'ground' ? 'Price' : 'Door to door', 'Deal', ''].map((c) => h('div', { role: 'columnheader' }, c))),
     offers.length
-      ? offers.slice(0, 80).map((o, i) => row(o, i, ctx))
+      ? offers.slice(0, ctx.limit || 80).map((o, i) => row(o, i, ctx))
       : h('p', { class: 'empty' }, 'No fares match. Try other dates, a bigger budget, or "Whole world".'),
     compareLinks(data.links));
 }
@@ -163,7 +165,7 @@ function board(offers, data, ctx) {
 /**
  * @param {HTMLElement} root
  * @param {{offers:object[], demo:boolean, origin:object, links:object[]|null}} data
- * @param {{anywhere:boolean, onlyCrazy:boolean, home:object, onPlan:Function, onToggleOnlyCrazy:Function}} ctx
+ * @param {{anywhere:boolean, limit?:number, onlyCrazy:boolean, home:object, onPlan:Function, onToggleOnlyCrazy:Function}} ctx
  */
 export function renderBoard(root, data, ctx) {
   const crazy = data.offers.filter((o) => o.deal?.tier === 'crazy');

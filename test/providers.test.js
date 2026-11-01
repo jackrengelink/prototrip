@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createDemoFlights, seededRandom } from '../server/providers/flights/demo.js';
 import { normalizeTravelpayouts, createTravelpayouts } from '../server/providers/flights/travelpayouts.js';
 import { normalizeSerpItinerary, createSerpApi } from '../server/providers/flights/serpapi.js';
-import { createFlightService, applyReach, bestPerDestination } from '../server/providers/flights/index.js';
+import { createFlightService, applyReach, bestPerDestination, bestPerRouteInCountry } from '../server/providers/flights/index.js';
 import { airlineName } from '../server/providers/flights/airlines.js';
 import { classifyArticle, pickCandidates, normalizeWikipedia } from '../server/providers/places/wikipedia.js';
 import { kindFromCategories, normalizeGeoapify } from '../server/providers/places/geoapify.js';
@@ -11,6 +11,7 @@ import { normalizeViator } from '../server/providers/places/viator.js';
 import { mergePlaces } from '../server/providers/places/index.js';
 import { describeWeather, normalizeDaily } from '../server/providers/weather.js';
 import { createCache } from '../server/lib/cache.js';
+import { findAirport } from '../server/data/airports.js';
 
 const quiet = { warn() {}, error() {}, info() {} };
 const mockFetch = (t, handler) => {
@@ -111,6 +112,22 @@ test('applyReach and bestPerDestination', () => {
   assert.equal(applyReach(offers, 'world').length, 3);
   const best = bestPerDestination([mk('x', 'BCN', 1300, 'good', 60, 90), mk('y', 'BCN', 1200, 'crazy', 95, 70)]);
   assert.deepEqual(best.map((o) => o.id), ['y']);
+});
+
+test('bestPerRouteInCountry keeps one fare per airport pair inside the country', () => {
+  const mk = (origin, destination, score) => ({ origin, destination, destinationCity: destination, deal: { score } });
+  const offers = [mk('EIN', 'BCN', 50), mk('EIN', 'BCN', 90), mk('DUS', 'BCN', 60), mk('EIN', 'AGP', 70), mk('EIN', 'FCO', 99)];
+  const kept = bestPerRouteInCountry(offers, 'ES');
+  assert.deepEqual(kept.map((o) => `${o.origin}-${o.destination}-${o.deal.score}`).sort(), ['DUS-BCN-60', 'EIN-AGP-70', 'EIN-BCN-90']);
+});
+
+test('country search ignores reach and returns every route into that country', async () => {
+  const svc = createFlightService({ config: { ryanair: false }, cache: createCache(), logger: quiet });
+  const res = await svc.searchAnywhere({ origin: 'NL', origins: ['AMS', 'DUS'], country: 'ES', reach: 'short', departDate: '2026-11-12', returnDate: '2026-11-18' });
+  assert.equal(res.country.name, 'Spain');
+  assert.ok(new Set(res.offers.map((o) => o.origin)).size === 2, 'both origins');
+  assert.ok(new Set(res.offers.map((o) => o.destination)).size >= 5, 'several Spanish airports');
+  assert.ok(res.offers.every((o) => findAirport(o.destination).country === 'ES'));
 });
 
 test('travelpayouts ignores booking links that are not plain paths', () => {

@@ -76,6 +76,15 @@ test('GET /api/deals anywhere returns scored deals and honours the budget', asyn
   assert.equal(body.data.links, null);
 });
 
+test('the To field can pick a country; the From field keeps airports only', async () => {
+  assert.equal((await get('/api/airports?q=spain&countries=1')).body.data[0].code, 'ES');
+  assert.deepEqual((await get('/api/airports?q=spain')).body.data, []);
+  const { body } = await get(`/api/deals?origin=NL&destination=country:ES&departDate=${future(30)}&returnDate=${future(35)}`);
+  assert.equal(body.data.country.name, 'Spain');
+  assert.ok(body.data.offers.length > 0);
+  assert.equal(body.data.links, null);
+});
+
 test('GET /api/deals for a route includes comparison links', async () => {
   const { body } = await get(`/api/deals?origin=JFK&destination=FCO&departDate=${future(30)}`);
   assert.equal(body.data.links.length, 5);
