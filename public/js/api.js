@@ -1,10 +1,35 @@
 // Thin client for the ProtoTrip API. Every response is { success, data, error }.
 
+// While Render wakes the app (about a minute) it answers with its own loading page instead of data.
+const WAKE_CHECKS = 18;
+const WAKE_CHECK_MS = 5000;
+let onWaking = () => {};
+
+/** Called with true while the server is waking up, and false once it answers. */
+export const setWakingHandler = (handler) => { onWaking = handler; };
+
+const wait = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+
+async function fetchWhenAwake(url) {
+  let waited = false;
+  for (let check = 0; ; check += 1) {
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    const asleep = res.ok && !res.headers.get('content-type')?.includes('json');
+    if (!asleep || check >= WAKE_CHECKS) {
+      if (waited) onWaking(false);
+      return res;
+    }
+    waited = true;
+    onWaking(true);
+    await wait(WAKE_CHECK_MS);
+  }
+}
+
 export async function getJson(path, params = {}) {
   const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== null && v !== undefined && v !== ''));
   let res;
   try {
-    res = await fetch(`${path}?${qs}`, { headers: { Accept: 'application/json' } });
+    res = await fetchWhenAwake(`${path}?${qs}`);
   } catch {
     throw new Error('Could not reach the ProtoTrip server. Is it running?');
   }

@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&family=Space+Grotesk:wght@500;700&display=swap">
   <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/controls.css">
   <script defer src="/vendor/leaflet/leaflet.js"></script>
   <script type="module" src="/js/app.js"></script>
 </head>
@@ -24,7 +25,10 @@
     </a>
     <span class="brand-sub">Trip finder for S.A. Proto · Enschede</span>
     <span class="status-chip" id="status-chip" role="status">Checking sources…</span>
-    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to light mode">☀</button>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to light mode">
+      <svg class="theme-icon icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3 7 7M17 17l1.7 1.7M5.3 18.7 7 17M17 7l1.7-1.7"/></svg>
+      <svg class="theme-icon icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.6A8.3 8.3 0 0 1 9.4 4a8.3 8.3 0 1 0 10.6 10.6Z"/></svg>
+    </button>
   </header>
 
   <main>
@@ -49,28 +53,29 @@
           <span>Include Dutch cities (usually free with your student OV)</span>
         </label>
         <div class="row row-places" data-mode-only="fly">
-          <label class="field">
-            <span class="field-label">From</span>
-            <input name="origin" id="origin" list="airport-list" maxlength="60">
-          </label>
-          <label class="field">
-            <span class="field-label">To</span>
-            <input name="destination" id="destination" list="destination-list" placeholder="Anywhere, a city or a country" maxlength="60">
-          </label>
+          <div class="field combo">
+            <label class="field-label" for="origin">From</label>
+            <input name="origin" id="origin" maxlength="60" spellcheck="false">
+          </div>
+          <div class="field combo">
+            <label class="field-label" for="destination">To</label>
+            <input name="destination" id="destination" placeholder="Anywhere, a city or a country" maxlength="60" spellcheck="false">
+          </div>
         </div>
-        <div class="row">
-          <label class="field">
-            <span class="field-label">Depart</span>
-            <input type="date" name="departDate" id="departDate" required>
-          </label>
-          <label class="field">
-            <span class="field-label">Return</span>
-            <input type="date" name="returnDate" id="returnDate">
-          </label>
+        <div class="row row-dates" id="date-row">
+          <div class="field">
+            <span class="field-label" id="depart-label">Depart</span>
+            <button class="date-button" id="depart-button" type="button" aria-haspopup="dialog" aria-expanded="false" aria-labelledby="depart-label depart-button"></button>
+          </div>
+          <div class="field">
+            <span class="field-label" id="return-label">Return</span>
+            <button class="date-button" id="return-button" type="button" aria-haspopup="dialog" aria-expanded="false" aria-labelledby="return-label return-button"></button>
+          </div>
           <label class="field field-narrow">
             <span class="field-label">Max € pp</span>
             <input type="number" name="budget" id="budget" min="1" max="100000" placeholder="any">
           </label>
+          <div class="date-popover" id="date-popover" role="dialog" aria-label="Choose your dates" hidden></div>
         </div>
         <label class="flex-toggle" data-mode-only="fly">
           <input type="checkbox" id="flex" checked>
@@ -100,8 +105,6 @@
           </fieldset>
         </div>
         <button class="btn-primary" type="submit">Hunt for deals</button>
-        <datalist id="airport-list"></datalist>
-        <datalist id="destination-list"></datalist>
       </form>
     </section>
 

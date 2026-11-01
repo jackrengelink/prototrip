@@ -247,6 +247,17 @@ export function createFlightService({ config, cache, directory = null, logger = 
 
   return {
     providers: live.map((p) => p.id),
+    /** Cheapest fare per day for one route and month. Empty when no source can say. */
+    async calendar(query) {
+      const source = live.find((p) => typeof p.cheapestDays === 'function');
+      if (!source) return { days: [] };
+      try {
+        return { days: await source.cheapestDays(query) };
+      } catch (err) {
+        logger.warn(`[flights] calendar ${query.origin}-${query.destination} failed: ${err.message}`);
+        return { days: [] };
+      }
+    },
     /**
      * Flights for one route (from one or many origins), cheapest flight first.
      * offerId: the fare someone chose. Keeps every two-ticket combination, so it can be found again.

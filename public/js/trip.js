@@ -3,6 +3,11 @@
 
 import { h, extLink, money, fmtDate, fmtDuration, stopsLabel } from './dom.js';
 import { dealBadge, compareLinks, trainLabel, dealLine, priceNumbers, priceSplit } from './board.js';
+import { costPanel } from './cost-panel.js';
+import { fareCalendar } from './fare-calendar.js';
+import { shareButtons } from './share.js';
+import { costBreakdown, shareMessage } from './costs.js';
+import { formatDay } from './dates.js';
 
 const KIND_LABEL = { sight: 'Sight', museum: 'Museum', nature: 'Outdoors', activity: 'Do', food: 'Eat', nightlife: 'Drinks', shopping: 'Market & shops', flight: 'Travel' };
 
@@ -96,6 +101,31 @@ function flightPanels(trip, onSwitchOffer) {
   return [h('div', { class: 'panel' }, h('h3', {}, 'Compare this trip'), compareLinks(trip.compare, '')), alts];
 }
 
+/** The way out, and the way home on a return. For two tickets the way home has its own airports. */
+function calendarLegs(f) {
+  const out = { id: 'out', label: 'Way out', from: f.origin, to: f.destination, date: f.departDate };
+  if (!f.returnDate) return [out];
+  return [out, { id: 'home', label: 'Way home', from: f.returnFrom || f.destination, to: f.returnTo || f.origin, date: f.returnDate }];
+}
+
+/** The cost panel and share buttons share one group size, so a shared message has the latest total. */
+function tripExtras(ctx, panel, message) {
+  let people = ctx.people;
+  const onPeople = (n) => {
+    people = n;
+    ctx.onPeople(n);
+  };
+  return {
+    cost: costPanel({ ...panel, people, onPeople }),
+    share: shareButtons(() => {
+      const { total } = costBreakdown({ ticket: panel.ticket, travel: panel.travel, people });
+      return shareMessage({ ...message, price: money(panel.ticket, panel.currency), travel: panel.travel ? money(panel.travel, panel.currency) : null, url: location.href, people, total: money(total, panel.currency) });
+    }),
+  };
+}
+
+const whenLabel = (startDate, endDate, isReturn) => (isReturn ? `${formatDay(startDate)} to ${formatDay(endDate)}` : formatDay(startDate));
+
 /** Renders the "what to do" results into its section. */
 export function renderExplore(root, data) {
   const counts = data.placeCounts || {};
@@ -133,9 +163,13 @@ export function renderTrip(root, trip, ctx) {
       h('span', { class: 'ring', 'aria-hidden': 'true' }),
       h('span', {}, h('b', {}, `What to do in ${name}?`), h('small', {}, 'Sights, food, drinks and a day-by-day plan for your dates'))));
 
+  const extras = f ? tripExtras(ctx,
+    { costs: trip.costs, ticket: f.price, ticketLabel: f.returnDate ? 'Flights' : 'Flight', travel: f.travelEur || 0, airline: f.airline, currency: f.currency },
+    { name, from: f.mixed ? `${f.origin}, flying home from ${f.returnFrom}` : f.origin, when: whenLabel(f.departDate, f.returnDate, Boolean(f.returnDate)) }) : null;
+
   const hero = h('header', { class: 'trip-hero' },
     h('div', {},
-      h('button', { class: 'btn-ghost back', type: 'button', onClick: ctx.onBack }, '← All deals'),
+      h('div', { class: 'trip-actions' }, h('button', { class: 'btn-ghost back', type: 'button', onClick: ctx.onBack }, '← All deals'), extras?.share),
       h('p', { class: 'trip-kicker' }, [trip.destination.country, f?.distanceKm ? `${f.distanceKm.toLocaleString('en')} km from ${f.origin}` : null].filter(Boolean).join(' · ')),
       h('h2', { class: 'trip-title' }, name),
       h('p', { class: 'trip-dates' }, `${fmtDate(trip.stay.startDate)} → ${fmtDate(trip.stay.endDate)}`)),
@@ -151,8 +185,9 @@ export function renderTrip(root, trip, ctx) {
     f?.mixed ? h('div', { class: 'notice' }, `These are 2 separate tickets, so book both. If the first flight is late or cancelled, the second ticket isn't changed for you.${f.destination === f.returnFrom ? '' : ` You also need to get from ${f.destination} to ${f.returnFrom} yourself.`}`) : null,
     f ? null : h('div', { class: 'notice', 'data-kind': 'error' }, 'No flights found for these dates any more.'),
     h('div', { class: 'trip-layout' },
-      h('div', {}, f?.coords?.destination ? h('div', { class: 'route-map', role: 'img', 'aria-label': `Route from Enschede via ${f.origin} to ${name}` }) : null, outbound, inbound),
-      h('aside', { class: 'trip-aside' }, flightPanels(trip, ctx.onSwitchOffer))),
+      h('div', {}, f?.coords?.destination ? h('div', { class: 'route-map', role: 'img', 'aria-label': `Route from Enschede via ${f.origin} to ${name}` }) : null, outbound, inbound,
+        f ? fareCalendar(calendarLegs(f), ctx.onMoveDates) : null),
+      h('aside', { class: 'trip-aside' }, extras?.cost, flightPanels(trip, ctx.onSwitchOffer))),
     exploreRoot,
   ].filter(Boolean));
 }
@@ -192,9 +227,13 @@ export function renderGroundTrip(root, trip, ctx) {
       h('span', { class: 'ring', 'aria-hidden': 'true' }),
       h('span', {}, h('b', {}, `What to do in ${name}?`), h('small', {}, 'Sights, food, drinks and a day-by-day plan for your dates'))));
 
+  const extras = o ? tripExtras(ctx,
+    { costs: trip.costs, ticket: o.price, ticketLabel: 'Bus or train', airline: o.airline, currency: o.currency || 'EUR' },
+    { name, from: 'Enschede', when: whenLabel(trip.stay.startDate, trip.stay.endDate, Boolean(o.returnDate)) }) : null;
+
   const hero = h('header', { class: 'trip-hero' },
     h('div', {},
-      h('button', { class: 'btn-ghost back', type: 'button', onClick: ctx.onBack }, '← All deals'),
+      h('div', { class: 'trip-actions' }, h('button', { class: 'btn-ghost back', type: 'button', onClick: ctx.onBack }, '← All deals'), extras?.share),
       h('p', { class: 'trip-kicker' }, [trip.destination.country, o?.distanceKm ? `${o.distanceKm.toLocaleString('en')} km from Enschede` : null, 'by bus & train'].filter(Boolean).join(' · ')),
       h('h2', { class: 'trip-title' }, name),
       h('p', { class: 'trip-dates' }, `${fmtDate(trip.stay.startDate)} → ${fmtDate(trip.stay.endDate)}`)),
@@ -225,6 +264,7 @@ export function renderGroundTrip(root, trip, ctx) {
         legCard('Outbound', trip.outbound, trip.outboundOptions),
         trip.inbound || trip.inboundOptions?.length ? legCard('Way back', trip.inbound, trip.inboundOptions) : null),
       h('aside', { class: 'trip-aside' },
+        extras?.cost,
         h('div', { class: 'panel' }, h('h3', {}, 'Compare bus & train'), compareLinks(trip.compare, '')))),
     exploreRoot,
   ].filter(Boolean));

@@ -1,10 +1,10 @@
 // Tests for the keyless sources: Ryanair fare finder, Wikivoyage listings, airport directory.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createRyanair, normalizeRyanair, fareWindows, ryanairBookingUrl } from '../server/providers/flights/ryanair.js';
+import { createRyanair, normalizeRyanair, fareWindows, ryanairBookingUrl, normalizeCalendar } from '../server/providers/flights/ryanair.js';
 import { parseListings, districtTitles, cleanWikiText, createWikivoyage } from '../server/providers/places/wikivoyage.js';
 import { buildDirectory, createDirectory } from '../server/data/directory.js';
 import { findAirport } from '../server/data/airports.js';
@@ -39,6 +39,31 @@ test('fareWindows: ±flex days, never in the past, nights range', () => {
   assert.deepEqual(w.back, { from: '2026-11-17', to: '2026-11-23' });
   assert.deepEqual(w.nights, { from: 4, to: 6 });
   assert.equal(fareWindows({ departDate: '2026-11-15', flex: 0, today: '2026-11-01' }).back, undefined);
+});
+
+test('normalizeCalendar keeps priced days and marks the rest as no fare', () => {
+  const days = normalizeCalendar({ outbound: { fares: [
+    { day: '2027-01-01', departureDate: '2027-01-01T19:05:00', price: { value: 66.99, currencyCode: 'EUR' }, soldOut: false, unavailable: false },
+    { day: '2027-01-02', price: null, soldOut: true, unavailable: false },
+    { day: '2027-01-03', price: null, soldOut: false, unavailable: true },
+  ] } });
+  assert.deepEqual(days, [
+    { date: '2027-01-01', price: 66.99, departTime: '19:05' },
+    { date: '2027-01-02', price: null, departTime: null },
+    { date: '2027-01-03', price: null, departTime: null },
+  ]);
+  assert.deepEqual(normalizeCalendar(null), []);
+});
+
+test('the Ryanair calendar asks for one route and month, and caches it', async () => {
+  const calls = [];
+  const fetcher = async (_id, url) => { calls.push(url); return { outbound: { fares: [] } }; };
+  const ryanair = createRyanair({ fetcher, cache: createCache() });
+  await ryanair.cheapestDays({ origin: 'EIN', destination: 'OPO', month: '2027-01' });
+  await ryanair.cheapestDays({ origin: 'EIN', destination: 'OPO', month: '2027-01' });
+  assert.equal(calls.length, 1);
+  assert.match(calls[0], /oneWayFares\/EIN\/OPO\/cheapestPerDay\?/);
+  assert.match(calls[0], /outboundMonthOfDate=2027-01-01/);
 });
 
 test('normalizeRyanair keeps real local times, price and a booking link', () => {
@@ -139,6 +164,19 @@ test('airport directory: joins cities, registers unknown airports, caches to dis
   assert.equal(findAirport('GRO').name, 'Girona');
   await createDirectory({ root, fetcher, logger: quiet }).ready();
   assert.equal(downloads, 2, 'second start reads the disk cache');
+});
+
+test('airport directory uses an older copy right away and updates it in the background', async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'prototrip-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(path.join(root, '.cache'));
+  const entries = [{ iata: 'ZZY', name: 'Oldtown', country: 'ES', city: 'ZZY', lat: 1, lon: 1 }];
+  await writeFile(path.join(root, '.cache', 'airports.json'), JSON.stringify({ savedAt: 0, entries }));
+  let asked = 0;
+  const fetcher = () => { asked += 1; return new Promise(() => {}); }; // A download that never finishes
+  assert.equal(await createDirectory({ root, fetcher, logger: quiet }).ready(), 1);
+  assert.equal(findAirport('ZZY').name, 'Oldtown');
+  assert.ok(asked > 0);
 });
 
 test('airport directory survives a failed download', async (t) => {

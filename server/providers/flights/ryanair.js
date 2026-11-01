@@ -85,7 +85,17 @@ export function normalizeRyanair(fare) {
   };
 }
 
+/** One month of a route's cheapest one-way fare per day. Days with no fare keep a null price. */
+export function normalizeCalendar(body) {
+  const fares = Array.isArray(body?.outbound?.fares) ? body.outbound.fares : [];
+  return fares.map((f) => {
+    const price = !f.soldOut && !f.unavailable && Number.isFinite(f.price?.value) ? f.price.value : null;
+    return { date: f.day, price, departTime: price === null ? null : timePart(f.departureDate) };
+  });
+}
+
 const FARES_TTL_MS = 20 * 60 * 1000;
+const CALENDAR_TTL_MS = 60 * 60 * 1000;
 
 export function createRyanair({ fetcher = fetchJson, cache = null } = {}) {
   async function fares(query) {
@@ -116,8 +126,19 @@ export function createRyanair({ fetcher = fetchJson, cache = null } = {}) {
     return (Array.isArray(body?.fares) ? body.fares : []).map(normalizeRyanair).filter(Boolean);
   }
 
+  async function fetchCalendar({ origin, destination, month }) {
+    const qs = new URLSearchParams({ outboundMonthOfDate: `${month}-01`, currency: 'EUR', market: 'en-gb' });
+    const body = await fetcher('ryanair', `${BASE}/oneWayFares/${origin}/${destination}/cheapestPerDay?${qs}`, { headers: HEADERS, timeoutMs: 10_000 });
+    return normalizeCalendar(body);
+  }
+
   return {
     id: 'ryanair',
+    /** The cheapest fare per day for one route and month. */
+    async cheapestDays(query) {
+      const { origin, destination, month } = query;
+      return cache ? cache.wrap(`ryanair:days:${origin}:${destination}:${month}`, CALENDAR_TTL_MS, () => fetchCalendar(query)) : fetchCalendar(query);
+    },
     /** Cheapest one-way ticket to everywhere from an airport, around one date. */
     async oneWays({ origin, departDate, flex }) {
       return fares({ origin, departDate, returnDate: null, flex });

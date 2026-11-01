@@ -42,6 +42,12 @@ export function parseDate(value, field, { today = todayUtc() } = {}) {
   return s;
 }
 
+export function parseMonth(value) {
+  const s = String(value || '').trim();
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(s)) throw new ValidationError('month must look like 2026-11');
+  return s;
+}
+
 export function parseReach(value) {
   const reach = String(value || 'smart').toLowerCase();
   if (!REACH.includes(reach)) throw new ValidationError(`reach must be one of ${REACH.join(', ')}`);

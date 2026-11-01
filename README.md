@@ -51,6 +51,14 @@ Two modes, switched with the tabs at the top of the search:
   - *Europe + crazy long-haul* (the default): far places only appear when they're crazy cheap
   - *Whole world*: everything
 
+- **On the trip page, for one fare:**
+  - *Cheapest days*: Ryanair's lowest one-way price per day, for the way out and the way home. Pick a day to move the
+    trip there. It hides itself on routes Ryanair doesn't fly.
+  - *What it really costs*: the ticket and train, a tick box for a 10 kg cabin bag (low-cost airlines only), a tick box
+    for hostel, food and transport, and the total for your group. These are estimates. The daily budget comes from
+    the Europe Backpacker Index 2025; the group warning is there because fares don't say how many seats are left.
+  - *Share trip*: a ready-made message with the price, dates and link, or straight to WhatsApp.
+
 ### 🚌 Bus & train
 - **Straight from Enschede** by FlixBus and FlixTrain: no airport, no hassle. Every trip-worthy destination
   within 10 hours (Berlin, Paris, Brussels, Hamburg, Bruges, Lille, Potsdam…). Small towns, airport stops and

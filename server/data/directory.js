@@ -60,10 +60,16 @@ export function createDirectory({ root, logger = console, fetcher = fetchJson })
     return entries;
   }
 
+  async function refresh() {
+    registerAirports(await download());
+  }
+
   async function load() {
     const cached = await readCache();
-    if (cached?.fresh) {
+    if (cached) {
       registerAirports(cached.entries);
+      // An older copy still works, so searches never wait for the update.
+      if (!cached.fresh) refresh().catch((err) => logger.warn(`[directory] update failed (${err.message}); keeping older copy`));
       return cached.entries.length;
     }
     try {
@@ -71,10 +77,9 @@ export function createDirectory({ root, logger = console, fetcher = fetchJson })
       registerAirports(entries);
       return entries.length;
     } catch (err) {
-      // Stale cache beats nothing; with neither, the curated airport list still works.
-      logger.warn(`[directory] download failed (${err.message}); ${cached ? 'using older cached copy' : 'using built-in airports only'}`);
-      if (cached) registerAirports(cached.entries);
-      return cached?.entries.length || 0;
+      // The curated airport list still works.
+      logger.warn(`[directory] download failed (${err.message}); using built-in airports only`);
+      return 0;
     }
   }
 

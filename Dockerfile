@@ -15,5 +15,8 @@ COPY public ./public
 RUN mkdir -p .cache && chown -R node:node /app
 USER node
 
+# Bake the airport directory into the image: Render's disk is wiped on every wake-up, so this saves a download each time.
+RUN node -e "import('./server/data/directory.js').then(({ createDirectory }) => createDirectory({ root: '/app' }).ready())" || true
+
 EXPOSE 8000
 CMD ["node", "server/index.js"]

@@ -1,11 +1,15 @@
 // ProtoTrip front end: Fly or Bus & train -> crazy deals + map + board -> trip -> "What to do".
 // All search state lives in the URL, so every view can be shared or bookmarked.
 
-import { h, isoPlusDays } from './dom.js';
-import { getJson, resolveCode, resolveDestination, countryOf, countryLabel, HOME_CODE } from './api.js';
+import { h, isoPlusDays, fmtDuration } from './dom.js';
+import { getJson, resolveCode, resolveDestination, countryOf, countryLabel, setWakingHandler, HOME_CODE } from './api.js';
 import { renderBoard, markSelected } from './board.js';
 import { createDealMap, createRouteMap } from './map.js';
 import { renderTrip, renderGroundTrip, renderExplore } from './trip.js';
+import { createDatePicker } from './datepicker.js';
+import { createCombobox } from './combobox.js';
+import { moveTripDates } from './fares.js';
+import { clampPeople } from './costs.js';
 
 const INTERESTS = [
   ['history', 'History'], ['art', 'Art & museums'], ['food', 'Food'],
@@ -13,7 +17,8 @@ const INTERESTS = [
 ];
 const DEFAULT_INTERESTS = ['history', 'food', 'nightlife'];
 const HOME_LABEL = `Netherlands & nearby · ${HOME_CODE}`;
-const AUTOCOMPLETE_DELAY_MS = 180;
+const POPULAR_COUNTRIES = ['ES', 'IT', 'PT', 'GR'];
+const MIN_SEARCH_CHARS = 2;
 const BOARD_LIMIT = 80;
 const COUNTRY_LIMIT = 200; // a country shows every route, so it can run longer
 const THEME_KEY = 'prototrip-theme';
@@ -26,8 +31,8 @@ const KEEP_WHEN_EMPTY = new Set(['returnDate', 'interests']);
 const $ = (id) => document.getElementById(id);
 const els = {
   form: $('search-form'), origin: $('origin'), destination: $('destination'),
-  departDate: $('departDate'), returnDate: $('returnDate'), budget: $('budget'), flex: $('flex'), domestic: $('domestic'),
-  chips: $('interest-chips'), airportList: $('airport-list'), destinationList: $('destination-list'), results: $('results'),
+  budget: $('budget'), flex: $('flex'), domestic: $('domestic'),
+  chips: $('interest-chips'), results: $('results'),
   list: $('results-list'), mapEl: $('deal-map'), mapTitle: $('map-title'), mapClear: $('map-clear'),
   trip: $('trip'), notice: $('notice'), status: $('status-chip'), theme: $('theme-toggle'),
   moreToggle: $('more-toggle'), moreOptions: $('more-options'),
@@ -41,6 +46,7 @@ let routeMap = null;
 let boardState = null;
 let selected = null;
 let latestView = 0;
+const dates = createDatePicker({ row: $('date-row'), departButton: $('depart-button'), returnButton: $('return-button'), popover: $('date-popover') });
 
 /** Only the newest search or trip may draw: a slow older answer must not replace it. */
 function startView() {
@@ -55,7 +61,6 @@ function storedTheme() {
 }
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
-  els.theme.textContent = theme === 'dark' ? '☀' : '☾';
   els.theme.setAttribute('aria-label', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
 }
 function toggleTheme() {
@@ -95,20 +100,25 @@ function setModeUi(mode) {
 
 const displayDestination = (d) => (countryOf(d) ? countryLabel(countryOf(d)) : d);
 
-/** Suggest places as the user types: From offers the home group first, To offers whole countries first. */
-function wireAutocomplete(input, list, { countries = false } = {}) {
-  let timer;
-  input.addEventListener('input', () => {
-    clearTimeout(timer);
-    const q = input.value.trim();
-    if (q.length < 2) return;
-    timer = setTimeout(async () => {
-      const matches = await getJson('/api/airports', { q, countries: countries ? '1' : '' }).catch(() => []);
-      list.replaceChildren(
-        ...(countries ? [] : [h('option', { value: HOME_LABEL })]),
-        ...matches.map((m) => h('option', { value: m.type === 'country' ? countryLabel(m.code, m.name) : `${m.name} · ${m.iata}` })));
-    }, AUTOCOMPLETE_DELAY_MS);
-  });
+const HOME_OPTION = { value: HOME_LABEL, title: 'Netherlands & nearby', code: HOME_CODE, hint: 'Every airport you can reach by train' };
+const countryOption = (code, name) => ({ value: countryLabel(code, name), title: countryLabel(code, name).split(' · ')[0], code, hint: 'All airports' });
+const airportOption = (m) => ({ value: `${m.name} · ${m.iata}`, title: m.name, code: m.iata, hint: Number.isFinite(m.travelMin) ? `🚆 ${fmtDuration(m.travelMin)} from Enschede` : null });
+const placeOption = (m) => (m.type === 'country' ? countryOption(m.code, m.name) : airportOption(m));
+
+/** From: the home group and its airports, or whatever matches the typing. */
+async function fromOptions(q) {
+  if (q.length < MIN_SEARCH_CHARS) return [HOME_OPTION, ...(home?.airports || []).map(airportOption)];
+  const matches = await getJson('/api/airports', { q }).catch(() => []);
+  const wantsHome = HOME_LABEL.toLowerCase().includes(q.toLowerCase());
+  return [...(wantsHome ? [HOME_OPTION] : []), ...matches.map(placeOption)];
+}
+
+/** To: anywhere and some favourite countries, or whatever matches the typing. */
+async function toOptions(q) {
+  if (q.length < MIN_SEARCH_CHARS) {
+    return [{ value: '', title: 'Anywhere', hint: 'All the crazy deals' }, ...POPULAR_COUNTRIES.map((code) => countryOption(code))];
+  }
+  return (await getJson('/api/airports', { q, countries: '1' }).catch(() => [])).map(placeOption);
 }
 
 /* ---------- URL state ---------- */
@@ -134,6 +144,7 @@ function readUrlState() {
     tripDepart: p.get('tripDepart'),
     tripReturn: p.get('tripReturn'),
     offerId: p.get('offerId'),
+    group: p.get('group') || '',
   };
 }
 
@@ -286,34 +297,57 @@ function backToDeals(state) {
   applyState(next);
 }
 
+/** Everything the trip page does back to the app, whichever kind of trip it shows. */
+function tripActions(state, interests) {
+  let current = state;
+  return {
+    people: clampPeople(state.group),
+    onBack: () => backToDeals(current),
+    onExplore: (target, t) => loadExplore(target, t, interests),
+    onPeople: (people) => {
+      current = { ...current, group: people > 1 ? String(people) : '' };
+      writeUrlState(current, { replace: true });
+    },
+    current: () => current,
+  };
+}
+
 async function loadTrip(state) {
   const isCurrent = startView();
-  const onBack = () => backToDeals(state);
+  const interests = interestsParam(state);
+  const actions = tripActions(state, interests);
+  const { onBack } = actions;
   els.results.hidden = true;
   els.trip.hidden = false;
   els.trip.replaceChildren(loading(state.mode === 'ground' ? 'Finding bus & train connections both ways…' : 'Loading your flight, weather and alternatives…'));
   showNotice('');
   window.scrollTo({ top: els.trip.offsetTop - 70, behavior: 'smooth' });
-  const interests = interestsParam(state);
   try {
     if (state.mode === 'ground') {
       const trip = await getJson('/api/ground-trip', { city: state.trip, departDate: state.tripDepart, returnDate: state.tripReturn });
       if (!isCurrent()) return;
-      renderGroundTrip(els.trip, trip, { onBack, onExplore: (target, t) => loadExplore(target, t, interests) });
+      renderGroundTrip(els.trip, trip, actions);
       showRouteMap(trip.offer);
       return;
     }
     const query = { origin: state.tripFrom || state.origin, airports: state.airports, destination: state.trip, departDate: state.tripDepart, returnDate: state.tripReturn, interests, offerId: state.offerId };
     const trip = await getJson('/api/trip', query);
     if (!isCurrent()) return;
+    const go = (changes) => {
+      const next = { ...actions.current(), ...changes };
+      writeUrlState(next, { replace: true });
+      loadTrip(next);
+    };
     renderTrip(els.trip, trip, {
+      ...actions,
       query,
-      onBack,
-      onExplore: (target, t) => loadExplore(target, t, interests),
-      onSwitchOffer: (offer) => {
-        const next = { ...state, offerId: offer.id, tripFrom: offer.origin };
-        writeUrlState(next, { replace: true });
-        loadTrip(next);
+      onSwitchOffer: (offer) => go({ offerId: offer.id, tripFrom: offer.origin }),
+      onMoveDates: (leg, day) => {
+        const flight = trip.flight;
+        const moved = moveTripDates({ depart: flight.departDate, ret: flight.returnDate || '' }, leg, day);
+        // Two tickets stay the same airports on the new dates; a normal fare picks the best one that day.
+        const offerId = flight.mixed ? flight.id.replace(/\d{4}-\d{2}-\d{2}-\d{4}-\d{2}-\d{2}$/, `${moved.depart}-${moved.ret}`) : '';
+        go({ tripDepart: moved.depart, tripReturn: moved.ret, offerId });
       },
     });
     showRouteMap(trip.flight);
@@ -353,11 +387,7 @@ async function onSubmit(event) {
   button.disabled = true;
   try {
     const mode = currentMode();
-    const base = {
-      mode,
-      departDate: els.departDate.value, returnDate: els.returnDate.value,
-      budget: els.budget.value, crazy: '', interests: selectedInterests(),
-    };
+    const base = { mode, ...dates.value, budget: els.budget.value, crazy: '', interests: selectedInterests() };
     let state = { ...base, domestic: els.domestic.checked ? '1' : '' };
     if (mode === 'fly') {
       const origin = await resolveCode(els.origin.value || HOME_CODE);
@@ -380,9 +410,7 @@ function applyState(state) {
   setModeUi(state.mode);
   els.origin.value = displayCode(state.origin);
   els.destination.value = displayDestination(state.destination);
-  els.departDate.value = state.departDate;
-  els.returnDate.value = state.returnDate;
-  els.returnDate.min = state.departDate;
+  dates.set(state.departDate, state.returnDate);
   els.budget.value = state.budget;
   els.flex.checked = state.flex !== '0';
   els.domestic.checked = state.domestic === '1';
@@ -406,10 +434,8 @@ function applyState(state) {
 /** Switching tabs runs that mode's search right away with the same dates. */
 function switchMode(mode) {
   if (mode === currentMode() && !els.results.hidden) return;
-  const url = readUrlState();
   // The dates in the form, even if they haven't been searched yet.
-  const dates = { departDate: els.departDate.value || url.departDate, returnDate: els.returnDate.value, budget: els.budget.value };
-  const state = { ...url, ...dates, mode, trip: null, tripFrom: null, tripDepart: null, tripReturn: null, offerId: null, crazy: '' };
+  const state = { ...readUrlState(), ...dates.value, budget: els.budget.value, mode, trip: null, tripFrom: null, tripDepart: null, tripReturn: null, offerId: null, crazy: '' };
   setModeUi(mode);
   writeUrlState(state);
   runSearch(state);
@@ -431,20 +457,13 @@ async function showStatus() {
 async function init() {
   applyTheme(storedTheme() === 'light' ? 'light' : 'dark');
   els.theme.addEventListener('click', toggleTheme);
-  els.departDate.min = isoPlusDays(0);
+  setWakingHandler((waking) => showNotice(waking ? 'ProtoTrip was asleep and is waking up. This takes about a minute.' : ''));
   els.moreToggle.addEventListener('click', () => {
     els.moreToggle.setAttribute('aria-expanded', String(els.moreOptions.classList.toggle('is-open')));
   });
-  els.departDate.addEventListener('change', () => {
-    if (els.returnDate.value && els.returnDate.value < els.departDate.value) els.returnDate.value = '';
-    els.returnDate.min = els.departDate.value;
-  });
-  els.origin.addEventListener('focus', () => {
-    if (!els.airportList.children.length) els.airportList.replaceChildren(h('option', { value: HOME_LABEL }));
-  });
   for (const tab of els.tabs) tab.addEventListener('click', () => switchMode(tab.dataset.mode));
-  wireAutocomplete(els.origin, els.airportList);
-  wireAutocomplete(els.destination, els.destinationList, { countries: true });
+  createCombobox(els.origin, fromOptions);
+  createCombobox(els.destination, toOptions);
   els.form.addEventListener('submit', onSubmit);
   els.mapClear.addEventListener('click', () => selectOffer(null));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && selected) selectOffer(null); });

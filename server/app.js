@@ -3,7 +3,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { searchAirports, searchCountries, findAirport, homeAirports, HOME } from './data/airports.js';
-import { parseSearch, parseStay, parseGroundSearch, parseCityId, ValidationError } from './lib/validate.js';
+import { parseSearch, parseStay, parseGroundSearch, parseCityId, parseIata, parseMonth, ValidationError } from './lib/validate.js';
 import { comparisonLinks } from './lib/links.js';
 import { planTrip, planGroundTrip, exploreTrip } from './trip.js';
 import { clientIp, createSessions, createLockout, parseCookies, sessionCookie, clearedCookie, loginPage, safeEqual, COOKIE_NAME } from './lib/auth.js';
@@ -126,6 +126,11 @@ export function createApp({ config, flights, ground, places, weather, logger = c
       if (offerId && !OFFER_ID.test(offerId)) throw new ValidationError('offerId is invalid');
       return planTrip({ query, offerId, flights, weather });
     },
+    '/api/calendar': async (params) => flights.calendar({
+      origin: parseIata(params.get('origin'), 'origin'),
+      destination: parseIata(params.get('destination'), 'destination'),
+      month: parseMonth(params.get('month')),
+    }),
     '/api/ground-trip': async (params) => {
       const q = parseGroundSearch(params);
       const trip = await planGroundTrip({ cityId: parseCityId(params.get('city')), departDate: q.departDate, returnDate: q.returnDate, ground, weather });

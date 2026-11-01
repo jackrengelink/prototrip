@@ -53,6 +53,22 @@ const get = async (path) => {
   return { status: res.status, headers: res.headers, body: res.headers.get('content-type')?.includes('json') ? await res.json() : await res.text() };
 };
 
+test('GET /api/calendar is empty without Ryanair and checks its input', async () => {
+  const ok = await get('/api/calendar?origin=EIN&destination=OPO&month=2027-01');
+  assert.equal(ok.status, 200);
+  assert.deepEqual(ok.body.data.days, []);
+  assert.equal((await get('/api/calendar?origin=EIN&destination=OPO&month=2027-13')).status, 400);
+  assert.equal((await get('/api/calendar?origin=EIN&destination=OPO&month=soon')).status, 400);
+  assert.equal((await get('/api/calendar?origin=E&destination=OPO&month=2027-01')).status, 400);
+});
+
+test('GET /api/trip gives the costs for the small print on the trip page', async () => {
+  const { body } = await get(`/api/trip?origin=AMS&destination=BCN&departDate=${future(30)}&returnDate=${future(34)}`);
+  assert.equal(body.data.costs.nights, 4);
+  assert.equal(body.data.costs.flights, 2);
+  assert.ok(body.data.costs.daily.eur > 0);
+});
+
 test('GET /api/status reports demo mode with no keys', async () => {
   const { body } = await get('/api/status');
   assert.deepEqual(body.data.flights, ['demo']);

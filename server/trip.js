@@ -3,6 +3,7 @@
 //   exploreTrip things to do and the day-by-day plan; only runs when someone clicks "What to do here?"
 
 import { findAirport } from './data/airports.js';
+import { tripCosts } from './data/costs.js';
 import { buildItinerary, toMinutes, fromMinutes } from './lib/itinerary.js';
 import { comparisonLinks } from './lib/links.js';
 
@@ -63,6 +64,7 @@ export async function planGroundTrip({ cityId, departDate, returnDate, ground, w
   const startDate = t.outbound?.arriveDate || departDate;
   const endDate = returnDate || addDays(startDate, ONE_WAY_STAY_DAYS);
   const center = { lat: t.city.lat, lon: t.city.lon };
+  const stay = { startDate: startDate > endDate ? endDate : startDate, endDate, arrivalTime: t.outbound?.arriveTime || null, departureTime: t.inbound?.departTime || null };
   return {
     mode: 'ground',
     destination: { code: null, name: t.city.name, country: t.city.country, center },
@@ -71,7 +73,8 @@ export async function planGroundTrip({ cityId, departDate, returnDate, ground, w
     inbound: t.inbound,
     outboundOptions: t.outboundOptions,
     inboundOptions: t.inboundOptions,
-    stay: { startDate: startDate > endDate ? endDate : startDate, endDate, arrivalTime: t.outbound?.arriveTime || null, departureTime: t.inbound?.departTime || null },
+    stay,
+    costs: tripCosts({ airline: null, returnDate, stay, place: t.city }),
     weather: await weather.forecast(center, startDate > endDate ? endDate : startDate, endDate),
     compare: GROUND_COMPARE(t.city.name, departDate).map((c) => (c.id === 'flixbus' ? { ...c, url: t.bookingUrl } : c)),
     warnings: t.outbound ? [] : ['No connections found on these dates. Try other days.'],
@@ -91,11 +94,13 @@ export async function planTrip({ query, offerId, flights, weather }) {
   const isReturn = Boolean(offer?.returnDate || query.returnDate);
   const departureTime = isReturn ? offer?.returnTime || DEFAULT_RETURN_TIME : null;
   const center = await destinationCentre(dest, weather);
+  const stay = { startDate, endDate, arrivalTime: arrival.time, departureTime };
 
   return {
     destination: { code: offer?.destination || query.destination, name: cityName, country: dest?.country || null, center },
     flight: offer ? { ...offer, arrival, returnTimeAssumed: isReturn && !offer.returnTime } : null,
-    stay: { startDate, endDate, arrivalTime: arrival.time, departureTime },
+    stay,
+    costs: tripCosts({ airline: offer?.airline, returnDate: offer?.returnDate || query.returnDate, stay, place: { name: cityName, country: dest?.country } }),
     alternatives: offers.filter((o) => o.id !== offer?.id && !o.mixed).slice(0, 6),
     demoFares: demo,
     weather: center ? await weather.forecast(center, startDate, endDate) : [],
