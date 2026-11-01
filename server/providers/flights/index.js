@@ -5,7 +5,7 @@ import { createDemoFlights } from './demo.js';
 import { createSerpApi } from './serpapi.js';
 import { createTravelpayouts } from './travelpayouts.js';
 import { createRyanair } from './ryanair.js';
-import { pairOneWays, cheapestPerAirportPair, returnAirportOf } from './mixed.js';
+import { pairOneWays, cheapestPerAirport, cheaperThanReturns } from './mixed.js';
 import { scoreOffers } from '../../lib/deals.js';
 import { haversineKm } from '../../lib/geo.js';
 import { findAirport, homeAirports, countryName, airportsInCountry } from '../../data/airports.js';
@@ -220,26 +220,21 @@ export function createFlightService({ config, cache, directory = null, logger = 
     return { tickets, failed };
   }
 
-  /**
-   * Every trip into a country that flies home from another airport, or to another home airport.
-   * returnFrom: also try this airport, which an exact date's outbound tickets may not reach.
-   */
-  async function mixedTrips(query, country, returnFrom = null) {
+  /** Every trip into a country that comes home to another home airport. */
+  async function mixedTrips(query, country) {
     const source = live.find((p) => typeof p.oneWays === 'function');
     const { departDate, returnDate, flex = 0 } = query;
     if (!source || !returnDate || !country) return [];
     const origins = query.origins?.length ? query.origins : [query.origin];
-    const key = `flights:mixed:${country}:${origins.join(',')}:${departDate}:${returnDate}:${flex}:${returnFrom}`;
+    const key = `flights:mixed:${country}:${origins.join(',')}:${departDate}:${returnDate}:${flex}`;
     const cached = cache.get(key);
     if (cached) return cached;
     const out = await oneWaysFrom(source, origins, departDate, flex);
     if (directory) await directory.ready();
     const outs = out.tickets.filter((o) => findAirport(o.destination)?.country === country && !origins.includes(o.destination));
-    const airports = new Set([...outs.map((o) => o.destination), ...(returnFrom ? [returnFrom] : [])]);
-    const back = await oneWaysFrom(source, airports, returnDate, flex);
+    const back = await oneWaysFrom(source, new Set(outs.map((o) => o.destination)), returnDate, flex);
     const backs = back.tickets.filter((o) => origins.includes(o.destination));
-    const trips = enrich(pairOneWays(outs, backs, { departDate, returnDate, flex }), { returnDate })
-      .map((o) => ({ ...o, returnFromName: findAirport(o.returnFrom)?.name || o.returnFrom }));
+    const trips = enrich(pairOneWays(outs, backs, { departDate, returnDate, flex }), { returnDate });
     // Only remember a complete answer, or one failed airport hides its trips for 20 minutes.
     if (out.failed + back.failed === 0) cache.set(key, trips, MIXED_TTL_MS);
     return trips;
@@ -266,9 +261,10 @@ export function createFlightService({ config, cache, directory = null, logger = 
       const res = await search('searchRoute', query);
       const place = findAirport(query.destination);
       const city = place?.city || query.destination;
-      const trips = await mixedTrips(query, place?.country, returnAirportOf(offerId));
+      const trips = await mixedTrips(query, place?.country);
       const mixed = trips.filter((o) => o.destination === query.destination || o.destinationCity === city);
-      return { ...res, offers: [...res.offers, ...(offerId ? mixed : cheapestPerAirportPair(mixed))].sort(byFlightPrice) };
+      const shown = offerId ? mixed : cheapestPerAirport(cheaperThanReturns(mixed, res.offers));
+      return { ...res, offers: [...res.offers, ...shown].sort(byFlightPrice) };
     },
     /**
      * "Anywhere": one fare per destination, filtered by reach. Cheapest flight first.
@@ -284,7 +280,7 @@ export function createFlightService({ config, cache, directory = null, logger = 
       const [google, mixed] = await Promise.all([googleCountry(query, seen.map((o) => o.destination)), mixedTrips(query, query.country)]);
       return {
         ...res,
-        offers: bestPerRouteInCountry([...seen, ...google.offers, ...cheapestPerAirportPair(mixed)], query.country).sort(byFlightPrice),
+        offers: bestPerRouteInCountry([...seen, ...google.offers, ...cheapestPerAirport(cheaperThanReturns(mixed, [...seen, ...google.offers]))], query.country).sort(byFlightPrice),
         warnings: [...res.warnings, ...google.warnings],
         country: { code: query.country, name: countryName(query.country) },
       };

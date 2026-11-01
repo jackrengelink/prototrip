@@ -165,7 +165,7 @@ export function renderTrip(root, trip, ctx) {
 
   const extras = f ? tripExtras(ctx,
     { costs: trip.costs, ticket: f.price, ticketLabel: f.returnDate ? 'Flights' : 'Flight', travel: f.travelEur || 0, airline: f.airline, currency: f.currency },
-    { name, from: f.mixed ? `${f.origin}, flying home from ${f.returnFrom}` : f.origin, when: whenLabel(f.departDate, f.returnDate, Boolean(f.returnDate)) }) : null;
+    { name, from: f.mixed ? `${f.origin}, back to ${f.returnTo}` : f.origin, when: whenLabel(f.departDate, f.returnDate, Boolean(f.returnDate)) }) : null;
 
   const hero = h('header', { class: 'trip-hero' },
     h('div', {},
@@ -182,7 +182,7 @@ export function renderTrip(root, trip, ctx) {
     hero,
     trip.demoFares ? h('div', { class: 'notice' }, 'These fares are simulated (demo mode): Ryanair could not be reached and no other fare source is set up.') : null,
     trip.warnings?.length ? h('div', { class: 'notice' }, trip.warnings.join(' · ')) : null,
-    f?.mixed ? h('div', { class: 'notice' }, `These are 2 separate tickets, so book both. If the first flight is late or cancelled, the second ticket isn't changed for you.${f.destination === f.returnFrom ? '' : ` You also need to get from ${f.destination} to ${f.returnFrom} yourself.`}`) : null,
+    f?.mixed ? h('div', { class: 'notice' }, `These are 2 separate tickets, so book both. If the first flight is late or cancelled, the second ticket isn't changed for you.`) : null,
     f ? null : h('div', { class: 'notice', 'data-kind': 'error' }, 'No flights found for these dates any more.'),
     h('div', { class: 'trip-layout' },
       h('div', {}, f?.coords?.destination ? h('div', { class: 'route-map', role: 'img', 'aria-label': `Route from Enschede via ${f.origin} to ${name}` }) : null, outbound, inbound,

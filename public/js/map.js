@@ -18,6 +18,7 @@ const TILES = {
 };
 const TIER_COLOR = { crazy: '#ff3d6e', great: '#26d4ea', good: '#83b71a', typical: '#8b94a0', pricey: '#c98a3a' };
 const ARC_POINTS = 64;
+const PLANE_SPOT = 0.35; // A third of the way along each direction, so the two planes pass each other
 const toRad = (d) => (d * Math.PI) / 180;
 const toDeg = (r) => (r * 180) / Math.PI;
 
@@ -76,7 +77,7 @@ function createMap(el) {
   map.attributionControl.setPrefix(false);
   // Leaflet stops wheel events on popups and buttons, so the page would scroll: pass them to the map to zoom.
   el.addEventListener('wheel', (event) => {
-    if (!event.target.closest?.('.leaflet-popup, .leaflet-control')) return;
+    if (!event.target.closest?.('.leaflet-control')) return;
     event.preventDefault();
     event.stopPropagation();
     el.dispatchEvent(new WheelEvent('wheel', event));
@@ -107,8 +108,9 @@ function homeMarker(home) {
   }).bindTooltip('Home: Enschede (UT)', { direction: 'top', offset: [0, -8] });
 }
 
-function planeMarker(arc, glyph = '✈') {
-  const mid = Math.floor(arc.length / 2);
+/** A plane on the line, pointing along it. `along` is how far down the line it sits, from 0 to 1. */
+function planeMarker(arc, glyph = '✈', along = 0.5) {
+  const mid = Math.floor((arc.length - 1) * along);
   const angle = bearing(arc[mid], arc[Math.min(arc.length - 1, mid + 1)]);
   const marker = L.marker(arc[mid], { icon: L.divIcon({ className: 'pin-plane', html: `<span class="plane">${glyph}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] }), interactive: false, keyboard: false });
   // Rotate via the DOM (not an inline style string) so the page CSP stays strict. ✈ points east, so subtract 90°.
@@ -137,7 +139,10 @@ function routeLayers(offer, home, { emphasis = true } = {}) {
   const arc = greatCircle(origin, destination);
   L.polyline(arc, { className: 'route-glow', weight: 10, interactive: false }).addTo(group);
   L.polyline(arc, { className: `route-flight tier-${offer.deal?.tier || 'typical'}`, weight: 3.5, interactive: false }).addTo(group);
-  if (emphasis) planeMarker(arc).addTo(group);
+  // A normal return flies this same line twice: one plane each way. Two tickets draw their own way home.
+  const bothWays = offer.returnDate && !offer.mixed;
+  if (emphasis) planeMarker(arc, '✈', bothWays ? PLANE_SPOT : 0.5).addTo(group);
+  if (emphasis && bothWays) planeMarker([...arc].reverse(), '✈', PLANE_SPOT).addTo(group);
   L.circleMarker(origin, { radius: 5, className: 'pin-origin', interactive: false }).addTo(group);
   return { group, points: [...points, arc[Math.floor(arc.length / 2)], ...wayHome(offer, home, group)] };
 }
@@ -155,14 +160,16 @@ function wayHome(offer, home, group) {
   return [returnFrom, returnTo];
 }
 
-function popupContent(offer, onPlan) {
-  return h('div', { class: 'map-popup' },
-    h('b', {}, offer.destinationName),
-    h('span', { class: 'map-popup-price' }, priceNumbers(offer), h('small', {}, offer.returnDate ? ' return' : ' one way')),
-    h('span', { class: 'map-popup-meta' }, offer.mode === 'ground'
-      ? `${offer.deal?.label || ''} · ${offer.airline} from Enschede${offer.durationMin ? ` · ${Math.floor(offer.durationMin / 60)}h ${String(offer.durationMin % 60).padStart(2, '0')}m` : ''}`
-      : `${offer.deal?.label || ''} · from ${offer.origin}${offer.mixed ? ` · home ${offer.returnFrom} → ${offer.returnTo}` : ''}${offer.distanceKm ? ` · ${offer.distanceKm.toLocaleString('en')} km` : ''}`),
-    h('button', { class: 'btn-cyan', type: 'button', onClick: () => onPlan(offer) }, 'Plan this trip →'));
+/** The selected deal, small, in the corner of the map, so it never covers the route. */
+function dealCard(offer, onPlan) {
+  const card = h('div', { class: 'map-card' },
+    h('div', { class: 'map-card-text' },
+      h('b', {}, offer.destinationName),
+      h('span', { class: 'map-card-price' }, priceNumbers(offer), h('small', {}, offer.returnDate ? ' return' : ' one way')),
+      h('small', {}, offer.mode === 'ground' ? `${offer.airline} from Enschede` : `From ${offer.origin}${offer.mixed ? `, back to ${offer.returnTo}` : ''}`)),
+    h('button', { class: 'btn-cyan', type: 'button', onClick: () => onPlan(offer) }, 'Plan →'));
+  L.DomEvent.disableClickPropagation(card);
+  return card;
 }
 
 /**
@@ -178,6 +185,7 @@ export function createDealMap(el, { onSelect, onPlan }) {
   const selectedLayer = L.layerGroup().addTo(map);
   let offers = [];
   let markers = new Map();
+  let card = null;
   map.setView([50, 10], 4);
   map.on('click', () => onSelect(null));
 
@@ -223,30 +231,29 @@ export function createDealMap(el, { onSelect, onPlan }) {
       offers = list.filter((o) => o.coords?.destination);
       drawAll();
       selectedLayer.clearLayers();
+      card?.remove();
       el.classList.remove('has-selection');
       fitAll();
     },
     /** Highlight one fare's full route, or show everything again with null. */
     select(offer) {
       selectedLayer.clearLayers();
+      card?.remove();
       el.classList.toggle('has-selection', Boolean(offer));
       if (!offer) {
-        map.closePopup();
         fitAll();
         return;
       }
       const { group, points } = routeLayers(offer, home);
       group.addTo(selectedLayer);
-      map.closePopup();
+      card = dealCard(offer, onPlan);
+      el.append(card);
       if (points.length) {
         // Jump instead of flying: an animated fly-to interrupted by scrolling can leave tiles and route misaligned.
         map.stop();
-        map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 7, animate: false });
+        // Extra room at the bottom keeps the route clear of the card.
+        map.fitBounds(L.latLngBounds(points), { paddingTopLeft: [40, 40], paddingBottomRight: [40, card.offsetHeight + 30], maxZoom: 7, animate: false });
       }
-      if (!offer.coords?.destination) return;
-      // Opened after the jump: a later map.stop() would cancel the auto-pan that keeps it fully on screen.
-      L.popup({ closeButton: false, offset: [0, -6], className: 'map-popup-wrap', autoPan: true, autoPanPadding: [12, 12] })
-        .setLatLng(offer.coords.destination).setContent(popupContent(offer, onPlan)).openOn(map);
     },
     setTheme,
     refresh() { map.invalidateSize(); },

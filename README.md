@@ -41,9 +41,9 @@ Two modes, switched with the tabs at the top of the search:
   can find from your From airport(s) to that country: one row per airline per route, with *How far?* ignored. Google
   Flights fills in airlines like KLM and TAP, using 3–6 of the 250 monthly SerpApi searches per new country and date
   (saved for 6 hours). Google's fares are for your exact dates; Ryanair's can be ±3 days.
-- **Fly home from another airport.** With a country or city in *To*, ProtoTrip pairs two Ryanair one-way tickets: fly into
-  Porto and home from Faro, or leave from Eindhoven and come back to Weeze. The airports at the destination are at most
-  600 km apart, because you make that hop yourself. These are 2 separate bookings, marked "2 tickets", and they use no
+- **Come home to another airport.** With a country or city in *To*, ProtoTrip pairs two Ryanair one-way tickets: leave
+  from Eindhoven and come back to Weeze, always flying home from the airport you landed at. They only show when they
+  beat the cheapest normal return to that airport. These are 2 separate bookings, marked "2 tickets", and they use no
   Google searches. Other airlines and "Anywhere" searches stay normal returns.
 - **Flexible dates.** ±3 days around your dates; the trip length stays within a night.
 - **How far?**

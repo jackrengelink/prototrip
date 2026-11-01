@@ -29,13 +29,13 @@ export const totalOf = (offer) => offer.totalPrice ?? offer.price;
 export function priceSplit(offer) {
   if (offer.mode === 'ground') return offer.priceIsFrom ? 'from-price: cheapest seat each way' : null;
   if (!offer.travelEur) return null;
-  if (offer.mixed) return `2 tickets + train/bus ${offer.returnTo === offer.origin ? `to and from ${offer.origin}` : `to ${offer.origin}, from ${offer.returnTo}`} (estimate)`;
+  if (offer.mixed) return `2 tickets + train/bus to ${offer.origin}, from ${offer.returnTo} (estimate)`;
   return `flight + train/bus to ${offer.origin} (estimate)`;
 }
 
-/** "Home from Faro (FAO) to AMS" when the way home isn't the way out reversed. */
+/** "Back to AMS" when the trip comes home to another airport. */
 export function homeLeg(offer) {
-  return offer.mixed ? `Home from ${offer.returnFromName || offer.returnFrom} (${offer.returnFrom}) to ${offer.returnTo}` : null;
+  return offer.mixed ? `Back to ${offer.returnTo}, 2 tickets` : null;
 }
 
 /** Two numbers: "€46 + €30", the flight and the train/bus to the airport. Other trips show one price. */
