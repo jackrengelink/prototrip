@@ -1,6 +1,7 @@
 /** Tiny in-memory TTL cache. Keeps paid API quotas from being burned on repeat searches. */
 export function createCache({ maxEntries = 500 } = {}) {
   const store = new Map();
+  const running = new Map();
 
   function get(key) {
     const hit = store.get(key);
@@ -17,13 +18,17 @@ export function createCache({ maxEntries = 500 } = {}) {
     store.set(key, { value, expires: Date.now() + ttlMs });
   }
 
-  /** Return the cached value, or compute it once and cache the result. */
+  /** Return the cached value, or compute it once and cache the result. Requests that arrive together share one call. */
   async function wrap(key, ttlMs, compute) {
     const cached = get(key);
     if (cached !== undefined) return cached;
-    const value = await compute();
-    set(key, value, ttlMs);
-    return value;
+    if (running.has(key)) return running.get(key);
+    const pending = Promise.resolve().then(compute).then((value) => {
+      set(key, value, ttlMs);
+      return value;
+    }).finally(() => running.delete(key));
+    running.set(key, pending);
+    return pending;
   }
 
   return { get, set, wrap, size: () => store.size };

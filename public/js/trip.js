@@ -28,9 +28,13 @@ function boardingPass({ label, from, to, date, time, flight, bookUrl, showPrice 
         h('span', { class: 'dim' }, `${flight.returnDate ? 'return' : 'one way'}, per person`),
         priceSplit(flight) ? h('span', { class: 'price-split' }, priceSplit(flight)) : null,
         dealBadge(flight),
-        extLink(bookUrl, { class: 'btn-primary' }, flight.live ? 'Book this fare' : 'Check this fare'),
+        extLink(bookUrl, { class: 'btn-primary' }, flight.mixed ? `Book ticket 1 (${money(flight.outPrice, flight.currency)})` : flight.live ? 'Book this fare' : 'Check this fare'),
         h('small', {}, flight.sourceLabel))
-      : h('div', { class: 'pass-stub' }, h('span', {}, 'Included in the'), h('b', {}, 'return fare')),
+      : flight.mixed
+        ? h('div', { class: 'pass-stub' },
+          h('span', {}, 'Second ticket'),
+          extLink(bookUrl, { class: 'btn-primary' }, `Book ticket 2 (${money(flight.backPrice, flight.currency)})`))
+        : h('div', { class: 'pass-stub' }, h('span', {}, 'Included in the'), h('b', {}, 'return fare')),
   );
 }
 
@@ -138,12 +142,13 @@ export function renderTrip(root, trip, ctx) {
     weatherStrip(trip.weather));
 
   const outbound = f ? boardingPass({ label: 'Outbound', from: f.origin, to: f.destination, date: f.departDate, time: f.departTime, flight: f, bookUrl: f.bookingUrl, showPrice: true }) : null;
-  const inbound = f?.returnDate ? boardingPass({ label: 'Flight home', from: f.destination, to: f.origin, date: f.returnDate, time: f.returnTime || (f.returnTimeAssumed ? '~17:00 (assumed)' : null), flight: f, showPrice: false }) : null;
+  const inbound = f?.returnDate ? boardingPass({ label: 'Flight home', from: f.returnFrom || f.destination, to: f.returnTo || f.origin, date: f.returnDate, time: f.returnTime || (f.returnTimeAssumed ? '~17:00 (assumed)' : null), flight: f, bookUrl: f.returnBookingUrl, showPrice: false }) : null;
 
   root.replaceChildren(...[
     hero,
     trip.demoFares ? h('div', { class: 'notice' }, 'These fares are simulated (demo mode): Ryanair could not be reached and no other fare source is set up.') : null,
     trip.warnings?.length ? h('div', { class: 'notice' }, trip.warnings.join(' · ')) : null,
+    f?.mixed ? h('div', { class: 'notice' }, `These are 2 separate tickets, so book both. If the first flight is late or cancelled, the second ticket isn't changed for you.${f.destination === f.returnFrom ? '' : ` You also need to get from ${f.destination} to ${f.returnFrom} yourself.`}`) : null,
     f ? null : h('div', { class: 'notice', 'data-kind': 'error' }, 'No flights found for these dates any more.'),
     h('div', { class: 'trip-layout' },
       h('div', {}, f?.coords?.destination ? h('div', { class: 'route-map', role: 'img', 'aria-label': `Route from Enschede via ${f.origin} to ${name}` }) : null, outbound, inbound),

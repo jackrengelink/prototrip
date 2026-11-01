@@ -18,6 +18,10 @@ const BOARD_LIMIT = 80;
 const COUNTRY_LIMIT = 200; // a country shows every route, so it can run longer
 const THEME_KEY = 'prototrip-theme';
 const SOURCE_NAMES = { ryanair: 'Ryanair', travelpayouts: 'Aviasales', serpapi: 'Google Flights' };
+const STACKED_LAYOUT = '(max-width: 980px)';
+const TOP_BAR_PX = 64;
+// An empty value here means something: no return date is a one-way, no interests is no interests.
+const KEEP_WHEN_EMPTY = new Set(['returnDate', 'interests']);
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -26,6 +30,7 @@ const els = {
   chips: $('interest-chips'), airportList: $('airport-list'), destinationList: $('destination-list'), results: $('results'),
   list: $('results-list'), mapEl: $('deal-map'), mapTitle: $('map-title'), mapClear: $('map-clear'),
   trip: $('trip'), notice: $('notice'), status: $('status-chip'), theme: $('theme-toggle'),
+  moreToggle: $('more-toggle'), moreOptions: $('more-options'),
   tabs: [...document.querySelectorAll('.mode-tab')],
 };
 
@@ -35,6 +40,14 @@ let dealMap = null;
 let routeMap = null;
 let boardState = null;
 let selected = null;
+let latestView = 0;
+
+/** Only the newest search or trip may draw: a slow older answer must not replace it. */
+function startView() {
+  latestView += 1;
+  const view = latestView;
+  return () => view === latestView;
+}
 
 /* ---------- Theme (dark by default) ---------- */
 function storedTheme() {
@@ -101,12 +114,14 @@ function wireAutocomplete(input, list, { countries = false } = {}) {
 /* ---------- URL state ---------- */
 function readUrlState() {
   const p = new URLSearchParams(location.search);
+  // An old link's dates have passed: start from fresh ones instead of an error.
+  const hasDates = p.get('departDate') >= isoPlusDays(0);
   return {
     mode: p.get('mode') === 'ground' ? 'ground' : 'fly',
     origin: p.get('origin') || HOME_CODE,
     destination: p.get('destination') || '',
-    departDate: p.get('departDate') || isoPlusDays(30),
-    returnDate: p.has('returnDate') ? p.get('returnDate') : isoPlusDays(34),
+    departDate: hasDates ? p.get('departDate') : isoPlusDays(30),
+    returnDate: hasDates && p.has('returnDate') ? p.get('returnDate') : isoPlusDays(34),
     budget: p.get('budget') || '',
     reach: p.get('reach') || 'smart',
     airports: ['nl', 'near', 'all'].includes(p.get('airports')) ? p.get('airports') : 'near',
@@ -124,7 +139,7 @@ function readUrlState() {
 
 function writeUrlState(state, { replace = false } = {}) {
   const clean = Object.entries({ ...state, mode: state.mode === 'ground' ? 'ground' : '' })
-    .filter(([, v]) => v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && !v.length));
+    .filter(([k, v]) => v !== null && v !== undefined && (KEEP_WHEN_EMPTY.has(k) || (v !== '' && !(Array.isArray(v) && !v.length))));
   const url = `${location.pathname}?${new URLSearchParams(clean)}`;
   if (replace) history.replaceState(null, '', url);
   else history.pushState(null, '', url);
@@ -170,6 +185,21 @@ function selectOffer(offer, source = 'list') {
   if (selected && source === 'map') {
     els.list.querySelector(`[data-offer-id="${CSS.escape(selected.id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
+  if (selected && source === 'list') showMapIfHidden();
+}
+
+/** On a phone the map scrolls away above the list, so a tapped deal would seem to do nothing. */
+function showMapIfHidden() {
+  if (!window.matchMedia(STACKED_LAYOUT).matches) return;
+  const panel = els.mapEl.closest('.map-panel');
+  const box = panel.getBoundingClientRect();
+  const seen = Math.min(box.bottom, window.innerHeight) - Math.max(box.top, TOP_BAR_PX);
+  if (seen < box.height * 0.4) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/** On small screens the results start below the form: take people there. */
+function showResultsIfHidden() {
+  if (els.results.getBoundingClientRect().top > window.innerHeight * 0.75) els.results.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 /* ---------- Deals ---------- */
@@ -192,7 +222,8 @@ function drawBoard(state) {
       drawBoard(next);
     },
   });
-  const shown = (onlyCrazy ? data.offers.filter((o) => o.deal?.tier === 'crazy') : data.offers).slice(0, limit);
+  const crazy = data.offers.filter((o) => o.deal?.tier === 'crazy');
+  const shown = (onlyCrazy && crazy.length ? crazy : data.offers).slice(0, limit);
   // A server started before the map existed sends fares without coordinates: say so instead of an empty map.
   els.mapEl.classList.toggle('is-outdated', shown.length > 0 && !shown.some((o) => o.coords?.destination));
   const map = getDealMap();
@@ -204,6 +235,7 @@ function drawBoard(state) {
 }
 
 async function runSearch(state) {
+  const isCurrent = startView();
   els.trip.hidden = true;
   els.results.hidden = false;
   selected = null;
@@ -214,10 +246,12 @@ async function runSearch(state) {
   showNotice('');
   try {
     const data = await getJson('/api/deals', searchParams(state));
+    if (!isCurrent()) return;
     lastDeals = { data, key: JSON.stringify(searchParams(state)) };
     if (data.warnings?.length) showNotice(data.warnings.join(' · '));
     drawBoard(state);
   } catch (err) {
+    if (!isCurrent()) return;
     els.list.replaceChildren();
     showNotice(err.message, 'error');
   }
@@ -228,7 +262,8 @@ function openTrip(state, offer) {
   const next = {
     ...state,
     trip: offer.destinationCity || offer.destination,
-    tripFrom: offer.mode === 'ground' ? '' : offer.origin,
+    // Two tickets can end at another home airport, so keep searching all of them.
+    tripFrom: offer.mode === 'ground' || offer.mixed ? '' : offer.origin,
     tripDepart: offer.departDate,
     tripReturn: offer.returnDate || '',
     offerId: offer.mode === 'ground' ? '' : offer.id,
@@ -244,7 +279,16 @@ function showRouteMap(offer) {
   if (routeEl && offer?.coords && window.L) routeMap = createRouteMap(routeEl, offer, home);
 }
 
+/** Back to the list. Works for shared links too, which have no earlier page to go back to. */
+function backToDeals(state) {
+  const next = { ...state, trip: null, tripFrom: null, tripDepart: null, tripReturn: null, offerId: null };
+  writeUrlState(next);
+  applyState(next);
+}
+
 async function loadTrip(state) {
+  const isCurrent = startView();
+  const onBack = () => backToDeals(state);
   els.results.hidden = true;
   els.trip.hidden = false;
   els.trip.replaceChildren(loading(state.mode === 'ground' ? 'Finding bus & train connections both ways…' : 'Loading your flight, weather and alternatives…'));
@@ -254,15 +298,17 @@ async function loadTrip(state) {
   try {
     if (state.mode === 'ground') {
       const trip = await getJson('/api/ground-trip', { city: state.trip, departDate: state.tripDepart, returnDate: state.tripReturn });
-      renderGroundTrip(els.trip, trip, { onBack: () => history.back(), onExplore: (target, t) => loadExplore(target, t, interests) });
+      if (!isCurrent()) return;
+      renderGroundTrip(els.trip, trip, { onBack, onExplore: (target, t) => loadExplore(target, t, interests) });
       showRouteMap(trip.offer);
       return;
     }
-    const query = { origin: state.tripFrom || state.origin, destination: state.trip, departDate: state.tripDepart, returnDate: state.tripReturn, interests, offerId: state.offerId };
+    const query = { origin: state.tripFrom || state.origin, airports: state.airports, destination: state.trip, departDate: state.tripDepart, returnDate: state.tripReturn, interests, offerId: state.offerId };
     const trip = await getJson('/api/trip', query);
+    if (!isCurrent()) return;
     renderTrip(els.trip, trip, {
       query,
-      onBack: () => history.back(),
+      onBack,
       onExplore: (target, t) => loadExplore(target, t, interests),
       onSwitchOffer: (offer) => {
         const next = { ...state, offerId: offer.id, tripFrom: offer.origin };
@@ -272,7 +318,8 @@ async function loadTrip(state) {
     });
     showRouteMap(trip.flight);
   } catch (err) {
-    els.trip.replaceChildren();
+    if (!isCurrent()) return;
+    els.trip.replaceChildren(h('button', { class: 'btn-ghost back', type: 'button', onClick: onBack }, '← All deals'));
     showNotice(err.message, 'error');
   }
 }
@@ -319,7 +366,9 @@ async function onSubmit(event) {
       state = { ...base, origin, destination, reach: radioValue('reach', 'smart'), airports: radioValue('airports', 'near'), flex: els.flex.checked ? '3' : '0' };
     }
     writeUrlState(state);
-    await runSearch(state);
+    const search = runSearch(state);
+    showResultsIfHidden();
+    await search;
   } catch (err) {
     showNotice(err.message, 'error');
   } finally {
@@ -333,6 +382,7 @@ function applyState(state) {
   els.destination.value = displayDestination(state.destination);
   els.departDate.value = state.departDate;
   els.returnDate.value = state.returnDate;
+  els.returnDate.min = state.departDate;
   els.budget.value = state.budget;
   els.flex.checked = state.flex !== '0';
   els.domestic.checked = state.domestic === '1';
@@ -343,6 +393,7 @@ function applyState(state) {
   renderChips(state.interests);
   if (state.trip) return loadTrip(state);
   if (lastDeals && lastDeals.key === JSON.stringify(searchParams(state))) {
+    startView();
     els.trip.hidden = true;
     els.results.hidden = false;
     drawBoard(state);
@@ -355,7 +406,10 @@ function applyState(state) {
 /** Switching tabs runs that mode's search right away with the same dates. */
 function switchMode(mode) {
   if (mode === currentMode() && !els.results.hidden) return;
-  const state = { ...readUrlState(), mode, trip: null, tripFrom: null, tripDepart: null, tripReturn: null, offerId: null, crazy: '' };
+  const url = readUrlState();
+  // The dates in the form, even if they haven't been searched yet.
+  const dates = { departDate: els.departDate.value || url.departDate, returnDate: els.returnDate.value, budget: els.budget.value };
+  const state = { ...url, ...dates, mode, trip: null, tripFrom: null, tripDepart: null, tripReturn: null, offerId: null, crazy: '' };
   setModeUi(mode);
   writeUrlState(state);
   runSearch(state);
@@ -367,7 +421,8 @@ async function showStatus() {
     home = s.home;
     getDealMap()?.setHome(home);
     els.status.dataset.mode = s.demoMode ? 'demo' : 'live';
-    els.status.textContent = s.demoMode ? 'Demo fares · real places' : `Live: ${[...s.flights.map((f) => SOURCE_NAMES[f] || f), 'FlixBus'].join(' + ')}`;
+    const sources = [...s.flights.map((f) => SOURCE_NAMES[f] || f), 'FlixBus'].join(' + ');
+    els.status.replaceChildren(...(s.demoMode ? ['Demo fares · real places'] : ['Live', h('span', { class: 'status-sources' }, `: ${sources}`)]));
   } catch {
     els.status.textContent = 'Offline';
   }
@@ -377,7 +432,9 @@ async function init() {
   applyTheme(storedTheme() === 'light' ? 'light' : 'dark');
   els.theme.addEventListener('click', toggleTheme);
   els.departDate.min = isoPlusDays(0);
-  els.returnDate.min = isoPlusDays(0);
+  els.moreToggle.addEventListener('click', () => {
+    els.moreToggle.setAttribute('aria-expanded', String(els.moreOptions.classList.toggle('is-open')));
+  });
   els.departDate.addEventListener('change', () => {
     if (els.returnDate.value && els.returnDate.value < els.departDate.value) els.returnDate.value = '';
     els.returnDate.min = els.departDate.value;

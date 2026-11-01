@@ -60,7 +60,7 @@ function styleLayer(t) {
   return { group: L.layerGroup([base, labels]), base, labels };
 }
 
-function createMap(el, opts = {}) {
+function createMap(el) {
   const map = L.map(el, {
     scrollWheelZoom: true, // zoom by scrolling while hovering
     wheelPxPerZoomLevel: 90,
@@ -68,7 +68,9 @@ function createMap(el, opts = {}) {
     worldCopyJump: true,
     minZoom: 2,
     attributionControl: true,
-    ...opts,
+    // On phones one finger scrolls the page; two fingers move and zoom the map.
+    dragging: !L.Browser.mobile,
+    zoomControl: !L.Browser.mobile,
   });
   // Drop the "Leaflet" prefix; the tile credit itself stays (Esri's free tiles require it).
   map.attributionControl.setPrefix(false);
@@ -130,7 +132,20 @@ function routeLayers(offer, home, { emphasis = true } = {}) {
   L.polyline(arc, { className: `route-flight tier-${offer.deal?.tier || 'typical'}`, weight: 3.5, interactive: false }).addTo(group);
   if (emphasis) planeMarker(arc).addTo(group);
   L.circleMarker(origin, { radius: 5, className: 'pin-origin', interactive: false }).addTo(group);
-  return { group, points: [...points, arc[Math.floor(arc.length / 2)]] };
+  return { group, points: [...points, arc[Math.floor(arc.length / 2)], ...wayHome(offer, home, group)] };
+}
+
+/** Two-ticket trips: the flight home as its own dashed arc, then the train from that home airport. */
+function wayHome(offer, home, group) {
+  const { returnFrom, returnTo } = offer.coords || {};
+  if (!returnFrom || !returnTo) return [];
+  const arc = greatCircle(returnFrom, returnTo);
+  L.polyline(arc, { className: `route-flight route-home tier-${offer.deal?.tier || 'typical'}`, weight: 3, interactive: false }).addTo(group);
+  planeMarker(arc).addTo(group);
+  L.circleMarker(returnFrom, { radius: 5, className: 'pin-origin', interactive: false }).addTo(group);
+  L.circleMarker(returnTo, { radius: 5, className: 'pin-origin', interactive: false }).addTo(group);
+  if (home) L.polyline([returnTo, [home.lat, home.lon]], { className: 'route-train', weight: 3, interactive: false }).addTo(group);
+  return [returnFrom, returnTo];
 }
 
 function popupContent(offer, onPlan) {
@@ -139,7 +154,7 @@ function popupContent(offer, onPlan) {
     h('span', { class: 'map-popup-price' }, priceNumbers(offer), h('small', {}, offer.returnDate ? ' return' : ' one way')),
     h('span', { class: 'map-popup-meta' }, offer.mode === 'ground'
       ? `${offer.deal?.label || ''} · ${offer.airline} from Enschede${offer.durationMin ? ` · ${Math.floor(offer.durationMin / 60)}h ${String(offer.durationMin % 60).padStart(2, '0')}m` : ''}`
-      : `${offer.deal?.label || ''} · from ${offer.origin}${offer.distanceKm ? ` · ${offer.distanceKm.toLocaleString('en')} km` : ''}`),
+      : `${offer.deal?.label || ''} · from ${offer.origin}${offer.mixed ? ` · home ${offer.returnFrom} → ${offer.returnTo}` : ''}${offer.distanceKm ? ` · ${offer.distanceKm.toLocaleString('en')} km` : ''}`),
     h('button', { class: 'btn-cyan', type: 'button', onClick: () => onPlan(offer) }, 'Plan this trip →'));
 }
 
@@ -162,7 +177,7 @@ export function createDealMap(el, { onSelect, onPlan }) {
   function fitAll() {
     const pts = offers.flatMap((o) => [o.coords?.destination, o.coords?.origin]).filter(Boolean);
     if (home) pts.push([home.lat, home.lon]);
-    if (pts.length) map.fitBounds(L.latLngBounds(pts), { padding: [30, 30], maxZoom: 6 });
+    if (pts.length) map.fitBounds(L.latLngBounds(pts), { padding: [30, 30], maxZoom: 6, animate: false });
   }
 
   function drawAll() {
@@ -216,20 +231,15 @@ export function createDealMap(el, { onSelect, onPlan }) {
       const { group, points } = routeLayers(offer, home);
       group.addTo(selectedLayer);
       map.closePopup();
-      const showPopup = () => {
-        if (!offer.coords?.destination) return;
-        // Opened after the fly-to finishes, so auto-pan can keep it fully on screen.
-        L.popup({ closeButton: false, offset: [0, -6], className: 'map-popup-wrap', autoPan: true, autoPanPadding: [20, 20] })
-          .setLatLng(offer.coords.destination).setContent(popupContent(offer, onPlan)).openOn(map);
-      };
       if (points.length) {
-        map.once('moveend', showPopup);
         // Jump instead of flying: an animated fly-to interrupted by scrolling can leave tiles and route misaligned.
         map.stop();
-        map.fitBounds(L.latLngBounds(points), { padding: [60, 60], maxZoom: 7, animate: false });
-      } else {
-        showPopup();
+        map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 7, animate: false });
       }
+      if (!offer.coords?.destination) return;
+      // Opened after the jump: a later map.stop() would cancel the auto-pan that keeps it fully on screen.
+      L.popup({ closeButton: false, offset: [0, -6], className: 'map-popup-wrap', autoPan: true, autoPanPadding: [12, 12] })
+        .setLatLng(offer.coords.destination).setContent(popupContent(offer, onPlan)).openOn(map);
     },
     setTheme,
     refresh() { map.invalidateSize(); },
@@ -238,7 +248,7 @@ export function createDealMap(el, { onSelect, onPlan }) {
 
 /** Small map of one trip's route on the trip screen. Returns a cleanup function. */
 export function createRouteMap(el, offer, home) {
-  const { map, setTheme } = createMap(el, { zoomControl: true });
+  const { map, setTheme } = createMap(el);
   const { group, points } = routeLayers(offer, home);
   // Position the map first: Leaflet can't place markers or tooltips on a map without a view.
   // Extra room on the right for the destination's name label.

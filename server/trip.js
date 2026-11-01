@@ -38,8 +38,9 @@ export function chooseOffer(offers, offerId) {
   if (offers.length === 0) return null;
   const chosen = offerId && offers.find((o) => o.id === offerId);
   if (chosen) return chosen;
-  // Best value: cheapest, but trade a little money for fewer stops.
-  return [...offers].sort((a, b) => a.price + a.transfers * 40 - (b.price + b.transfers * 40))[0];
+  // Best value: cheapest, but trade a little money for fewer stops. Two separate tickets only by choice.
+  const plain = offers.some((o) => !o.mixed) ? offers.filter((o) => !o.mixed) : offers;
+  return [...plain].sort((a, b) => a.price + a.transfers * 40 - (b.price + b.transfers * 40))[0];
 }
 
 /** City centre for a destination code (geocoded when possible, else the airport). */
@@ -78,7 +79,7 @@ export async function planGroundTrip({ cityId, departDate, returnDate, ground, w
 }
 
 export async function planTrip({ query, offerId, flights, weather }) {
-  const { offers, warnings, demo } = await flights.searchRoute(query);
+  const { offers, warnings, demo } = await flights.searchRoute(query, { offerId });
   const offer = chooseOffer(offers, offerId);
   const swapped = Boolean(offerId && offer && offer.id !== offerId);
   const dest = findAirport(offer?.destination) || findAirport(query.destination);
@@ -95,7 +96,7 @@ export async function planTrip({ query, offerId, flights, weather }) {
     destination: { code: offer?.destination || query.destination, name: cityName, country: dest?.country || null, center },
     flight: offer ? { ...offer, arrival, returnTimeAssumed: isReturn && !offer.returnTime } : null,
     stay: { startDate, endDate, arrivalTime: arrival.time, departureTime },
-    alternatives: offers.filter((o) => o.id !== offer?.id).slice(0, 6),
+    alternatives: offers.filter((o) => o.id !== offer?.id && !o.mixed).slice(0, 6),
     demoFares: demo,
     weather: center ? await weather.forecast(center, startDate, endDate) : [],
     compare: comparisonLinks({

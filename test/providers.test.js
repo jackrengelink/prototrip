@@ -20,6 +20,27 @@ const mockFetch = (t, handler) => {
   globalThis.fetch = async (url, init) => new Response(JSON.stringify(handler(String(url), init)), { status: 200 });
 };
 
+test('cache.wrap shares one call between requests that arrive together', async () => {
+  const cache = createCache();
+  let calls = 0;
+  const slow = async () => { calls += 1; await new Promise((r) => setTimeout(r, 5)); return 'fare'; };
+  assert.deepEqual(await Promise.all([cache.wrap('k', 1000, slow), cache.wrap('k', 1000, slow)]), ['fare', 'fare']);
+  assert.equal(calls, 1);
+});
+
+test('cache.wrap lets the next request retry after a failure', async () => {
+  const cache = createCache();
+  await assert.rejects(cache.wrap('k', 1000, async () => { throw new Error('down'); }));
+  assert.equal(await cache.wrap('k', 1000, async () => 'fare'), 'fare');
+});
+
+test('warnings use the name people know, not the internal id', async (t) => {
+  mockFetch(t, () => { throw new Error('down'); });
+  const svc = createFlightService({ config: { travelpayoutsToken: 't', ryanair: false }, cache: createCache(), logger: quiet });
+  const { warnings } = await svc.searchRoute({ origin: 'AMS', origins: ['AMS'], destination: 'BCN', departDate: '2027-01-29', returnDate: '2027-02-02' });
+  assert.ok(warnings.includes('Aviasales is unavailable right now'), warnings.join());
+});
+
 test('seededRandom is deterministic', () => {
   const a = seededRandom('x');
   const b = seededRandom('x');

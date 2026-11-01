@@ -29,7 +29,13 @@ export const totalOf = (offer) => offer.totalPrice ?? offer.price;
 export function priceSplit(offer) {
   if (offer.mode === 'ground') return offer.priceIsFrom ? 'from-price: cheapest seat each way' : null;
   if (!offer.travelEur) return null;
+  if (offer.mixed) return `2 tickets + train/bus ${offer.returnTo === offer.origin ? `to and from ${offer.origin}` : `to ${offer.origin}, from ${offer.returnTo}`} (estimate)`;
   return `flight + train/bus to ${offer.origin} (estimate)`;
+}
+
+/** "Home from Faro (FAO) to AMS" when the way home isn't the way out reversed. */
+export function homeLeg(offer) {
+  return offer.mixed ? `Home from ${offer.returnFromName || offer.returnFrom} (${offer.returnFrom}) to ${offer.returnTo}` : null;
 }
 
 /** Two numbers: "€46 + €30", the flight and the train/bus to the airport. Other trips show one price. */
@@ -109,6 +115,7 @@ function crazyCard(offer, index, ctx) {
         : h('div', { class: 'crazy-meta' },
           h('span', {}, 'From ', h('b', {}, `${originName(offer, home)} (${offer.origin})`), ` · ${stopsLabel(offer.transfers)}`),
           h('span', {}, whenLabel(offer), offer.departTime ? ` · dep ${offer.departTime}` : ''),
+          homeLeg(offer) ? h('span', {}, h('b', {}, homeLeg(offer))) : null,
           trainLabel(offer) ? h('span', {}, trainLabel(offer)) : null),
       h('div', {}, h('button', { class: 'btn-cyan', type: 'button', onClick: () => onPlan(offer) }, 'Plan this trip →'))));
 }
@@ -135,14 +142,14 @@ function row(offer, index, ctx) {
   return h('div', { class: 'board-row', style: `--i:${Math.min(index, 30)}`, role: 'row', 'data-tier': offer.deal?.tier, ...selectable(offer, ctx) },
     h('div', { class: 'c-dest dest', role: 'cell' },
       anywhere ? offer.destinationName : `${offer.departTime || '--:--'} → ${offer.destination}`,
-      h('small', {}, offer.mode === 'ground' ? offer.country : anywhere ? offer.destination : offer.destinationName)),
+      h('small', {}, offer.mode === 'ground' ? offer.country : homeLeg(offer) || (anywhere ? offer.destination : offer.destinationName))),
     h('div', { class: 'c-from', role: 'cell' },
       h('span', { class: 'from' }, offer.mode === 'ground' ? 'Enschede' : offer.origin),
       h('small', {}, offer.mode === 'ground' ? offer.airline : Number.isFinite(offer.travelMin) ? `🚆 ${fmtDuration(offer.travelMin)} · ~${money(offer.travelEur || 0)}` : originName(offer, home))),
     h('div', { class: 'c-when', role: 'cell' }, whenLabel(offer), offer.departTime && anywhere ? h('small', {}, `dep ${offer.departTime}`) : null),
     h('div', { class: 'c-air dim', role: 'cell' }, offer.airline, h('small', {}, [stopsLabel(offer.transfers), offer.durationMin ? fmtDuration(offer.durationMin) : null].filter(Boolean).join(' · '))),
     h('div', { class: 'c-price price', role: 'cell' }, priceNumbers(offer),
-      h('small', {}, offer.priceIsFrom ? 'from' : offer.travelEur ? 'flight + train/bus' : offer.live ? 'live' : offer.source === 'demo' ? 'demo' : 'recent')),
+      h('small', {}, offer.priceIsFrom ? 'from' : offer.mixed ? '2 tickets + train/bus' : offer.travelEur ? 'flight + train/bus' : offer.live ? 'live' : offer.source === 'demo' ? 'demo' : 'recent')),
     h('div', { class: 'c-badge', role: 'cell' }, dealBadge(offer), saving ? h('small', {}, saving) : null),
     h('div', { class: 'c-plan', role: 'cell' },
       h('button', { class: 'btn-plan', type: 'button', onClick: () => onPlan(offer) }, 'Plan trip →')),
@@ -176,10 +183,10 @@ function board(offers, data, ctx) {
  */
 export function renderBoard(root, data, ctx) {
   const crazy = data.offers.filter((o) => o.deal?.tier === 'crazy');
-  const rest = ctx.onlyCrazy ? [] : data.offers;
+  // "Only crazy deals" from an old link with none left: show everything rather than an empty board.
   const parts = [
     spotlight(crazy, ctx),
-    ctx.onlyCrazy && crazy.length ? null : board(rest, data, ctx),
+    ctx.onlyCrazy && crazy.length ? null : board(data.offers, data, ctx),
   ];
   root.replaceChildren(...parts.filter(Boolean));
 }

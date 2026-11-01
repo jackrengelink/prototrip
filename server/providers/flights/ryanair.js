@@ -118,6 +118,10 @@ export function createRyanair({ fetcher = fetchJson, cache = null } = {}) {
 
   return {
     id: 'ryanair',
+    /** Cheapest one-way ticket to everywhere from an airport, around one date. */
+    async oneWays({ origin, departDate, flex }) {
+      return fares({ origin, departDate, returnDate: null, flex });
+    },
     async searchAnywhere(query) {
       return fares(query);
     },

@@ -5,6 +5,7 @@ import { createDemoFlights } from './demo.js';
 import { createSerpApi } from './serpapi.js';
 import { createTravelpayouts } from './travelpayouts.js';
 import { createRyanair } from './ryanair.js';
+import { pairOneWays, cheapestPerAirportPair, returnAirportOf } from './mixed.js';
 import { scoreOffers } from '../../lib/deals.js';
 import { haversineKm } from '../../lib/geo.js';
 import { findAirport, homeAirports, countryName, airportsInCountry } from '../../data/airports.js';
@@ -17,10 +18,14 @@ const GOOGLE_COUNTRY_TTL_MS = 6 * HOUR;
 const GOOGLE_ORIGINS_PER_SEARCH = 3;
 const GOOGLE_AIRPORTS_PER_SEARCH = 7;
 const GOOGLE_MAX_AIRPORT_GROUPS = 2;
+// Ticket home from each airport in a country: gentle on Ryanair's unofficial endpoint.
+const MIXED_TTL_MS = 20 * MINUTE;
+const MIXED_CALLS_AT_ONCE = 5;
 // Roughly a 4.5-hour flight from the Netherlands: all of Europe, the Canaries, Morocco, Istanbul.
 export const SHORT_HAUL_KM = 3600;
 
 const HOME_INFO = new Map(homeAirports().map((a) => [a.iata, a]));
+const PROVIDER_NAMES = { ryanair: 'Ryanair', travelpayouts: 'Aviasales', serpapi: 'Google Flights' };
 
 function distanceFor(offer) {
   const a = findAirport(offer.origin);
@@ -32,9 +37,14 @@ function distanceFor(offer) {
 export function coordsFor(offer) {
   const a = findAirport(offer.origin);
   const b = findAirport(offer.destination) || findAirport(offer.destinationCity);
+  const point = (code) => {
+    const place = findAirport(code);
+    return place ? [place.lat, place.lon] : null;
+  };
   return {
     origin: a ? [a.lat, a.lon] : null,
     destination: b ? [b.lat, b.lon] : null,
+    ...(offer.returnFrom && { returnFrom: point(offer.returnFrom), returnTo: point(offer.returnTo) }),
   };
 }
 
@@ -45,7 +55,7 @@ export const byFlightPrice = (a, b) => a.price - b.price || b.deal.score - a.dea
 function dedupe(offers) {
   const seen = new Map();
   for (const o of offers) {
-    const key = `${o.origin}-${o.destination}-${o.departDate}-${o.departTime}-${o.airline}`;
+    const key = o.mixed ? o.id : `${o.origin}-${o.destination}-${o.departDate}-${o.departTime}-${o.airline}`;
     const prev = seen.get(key);
     if (!prev || o.price < prev.price) seen.set(key, o);
   }
@@ -69,11 +79,20 @@ export function bestPerRouteInCountry(offers, country) {
   for (const o of offers) {
     const place = findAirport(o.destination) || findAirport(o.destinationCity);
     if (place?.country !== country) continue;
-    const key = `${o.origin}-${o.destination}-${String(o.airline).toLowerCase()}`;
+    const key = o.mixed ? o.id : `${o.origin}-${o.destination}-${String(o.airline).toLowerCase()}`;
     const prev = best.get(key);
     if (!prev || o.price < prev.price) best.set(key, o);
   }
   return [...best.values()];
+}
+
+/** The train/bus for a whole trip. With two home airports: half the return ticket to each. */
+function travelCost(offer, returnDate) {
+  const home = HOME_INFO.get(offer.origin);
+  if (!home) return 0;
+  if (!returnDate) return Math.round(home.travelEur / 2);
+  if (!offer.mixed || offer.returnTo === offer.origin) return home.travelEur;
+  return Math.round(home.travelEur / 2) + Math.round((HOME_INFO.get(offer.returnTo)?.travelEur || 0) / 2);
 }
 
 const chunk = (list, size) => Array.from({ length: Math.ceil(list.length / size) }, (_, i) => list.slice(i * size, (i + 1) * size));
@@ -89,7 +108,7 @@ function enrich(offers, { returnDate }) {
   // Door-to-door: add the train/bus ticket from Enschede to the departure airport.
   const withTravel = dedupe(offers).map((o) => {
     const home = HOME_INFO.get(o.origin);
-    const travelEur = home ? (returnDate ? home.travelEur : Math.round(home.travelEur / 2)) : 0;
+    const travelEur = travelCost(o, returnDate);
     return { ...o, travelMin: home?.travelMin ?? null, travelEur, totalPrice: Math.round((o.price + travelEur) * 100) / 100 };
   });
   return scoreOffers(withTravel, { distanceFor, roundTrip: Boolean(returnDate) })
@@ -154,7 +173,7 @@ export function createFlightService({ config, cache, directory = null, logger = 
     const offers = perOrigin.flatMap((r) => r.offers).filter((o) => Number.isFinite(o.price) && o.price > 0);
     const scored = enrich(offers, { returnDate });
 
-    const warnings = [...new Set(failed)].map((id) => `${id} is unavailable right now`);
+    const warnings = failed.map((id) => `${PROVIDER_NAMES[id] || id} is unavailable right now`);
     if (isDemo && failed.length > 0) warnings.push('No live fares found, so these are demo prices');
     const result = { offers: scored, warnings, demo: isDemo };
     // Never cache a result that came from a failure, or one outage sticks around for 30 minutes.
@@ -181,12 +200,64 @@ export function createFlightService({ config, cache, directory = null, logger = 
     return result;
   }
 
+  /** One-way tickets from many airports. An airport that fails is logged, left out and counted. */
+  async function oneWaysFrom(source, airports, date, flex) {
+    const pending = [...airports];
+    const tickets = [];
+    let failed = 0;
+    const worker = async () => {
+      while (pending.length > 0) {
+        const origin = pending.shift();
+        try {
+          tickets.push(...await source.oneWays({ origin, departDate: date, flex }));
+        } catch (err) {
+          failed += 1;
+          logger.warn(`[flights] one-way tickets from ${origin} failed: ${err.message}`);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: MIXED_CALLS_AT_ONCE }, worker));
+    return { tickets, failed };
+  }
+
+  /**
+   * Every trip into a country that flies home from another airport, or to another home airport.
+   * returnFrom: also try this airport, which an exact date's outbound tickets may not reach.
+   */
+  async function mixedTrips(query, country, returnFrom = null) {
+    const source = live.find((p) => typeof p.oneWays === 'function');
+    const { departDate, returnDate, flex = 0 } = query;
+    if (!source || !returnDate || !country) return [];
+    const origins = query.origins?.length ? query.origins : [query.origin];
+    const key = `flights:mixed:${country}:${origins.join(',')}:${departDate}:${returnDate}:${flex}:${returnFrom}`;
+    const cached = cache.get(key);
+    if (cached) return cached;
+    const out = await oneWaysFrom(source, origins, departDate, flex);
+    if (directory) await directory.ready();
+    const outs = out.tickets.filter((o) => findAirport(o.destination)?.country === country && !origins.includes(o.destination));
+    const airports = new Set([...outs.map((o) => o.destination), ...(returnFrom ? [returnFrom] : [])]);
+    const back = await oneWaysFrom(source, airports, returnDate, flex);
+    const backs = back.tickets.filter((o) => origins.includes(o.destination));
+    const trips = enrich(pairOneWays(outs, backs, { departDate, returnDate, flex }), { returnDate })
+      .map((o) => ({ ...o, returnFromName: findAirport(o.returnFrom)?.name || o.returnFrom }));
+    // Only remember a complete answer, or one failed airport hides its trips for 20 minutes.
+    if (out.failed + back.failed === 0) cache.set(key, trips, MIXED_TTL_MS);
+    return trips;
+  }
+
   return {
     providers: live.map((p) => p.id),
-    /** Flights for one route (from one or many origins), cheapest flight first. */
-    async searchRoute(query) {
+    /**
+     * Flights for one route (from one or many origins), cheapest flight first.
+     * offerId: the fare someone chose. Keeps every two-ticket combination, so it can be found again.
+     */
+    async searchRoute(query, { offerId = null } = {}) {
       const res = await search('searchRoute', query);
-      return { ...res, offers: [...res.offers].sort(byFlightPrice) };
+      const place = findAirport(query.destination);
+      const city = place?.city || query.destination;
+      const trips = await mixedTrips(query, place?.country, returnAirportOf(offerId));
+      const mixed = trips.filter((o) => o.destination === query.destination || o.destinationCity === city);
+      return { ...res, offers: [...res.offers, ...(offerId ? mixed : cheapestPerAirportPair(mixed))].sort(byFlightPrice) };
     },
     /**
      * "Anywhere": one fare per destination, filtered by reach. Cheapest flight first.
@@ -199,10 +270,10 @@ export function createFlightService({ config, cache, directory = null, logger = 
         return { ...res, offers: applyReach(bestPerDestination(res.offers), query.reach || 'smart').sort(byFlightPrice) };
       }
       const seen = bestPerRouteInCountry(res.offers, query.country);
-      const google = await googleCountry(query, seen.map((o) => o.destination));
+      const [google, mixed] = await Promise.all([googleCountry(query, seen.map((o) => o.destination)), mixedTrips(query, query.country)]);
       return {
         ...res,
-        offers: bestPerRouteInCountry([...seen, ...google.offers], query.country).sort(byFlightPrice),
+        offers: bestPerRouteInCountry([...seen, ...google.offers, ...cheapestPerAirportPair(mixed)], query.country).sort(byFlightPrice),
         warnings: [...res.warnings, ...google.warnings],
         country: { code: query.country, name: countryName(query.country) },
       };

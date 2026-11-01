@@ -6,6 +6,7 @@
   <title>ProtoTrip</title>
   <meta name="description" content="Crazy flight deals from the Netherlands, with a day-by-day plan for when you land. Made for S.A. Proto trips.">
   <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#83b71a">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -47,7 +48,7 @@
           <input type="checkbox" id="domestic">
           <span>Include Dutch cities (usually free with your student OV)</span>
         </label>
-        <div class="row" data-mode-only="fly">
+        <div class="row row-places" data-mode-only="fly">
           <label class="field">
             <span class="field-label">From</span>
             <input name="origin" id="origin" list="airport-list" maxlength="60">
@@ -75,26 +76,29 @@
           <input type="checkbox" id="flex" checked>
           <span>Flexible: ±3 days around these dates (finds way more crazy deals)</span>
         </label>
-        <fieldset class="group" data-mode-only="fly">
-          <legend class="field-label">Which airports?</legend>
-          <div class="segmented" role="radiogroup">
-            <label><input type="radio" name="airports" value="nl"><span>Dutch only</span></label>
-            <label><input type="radio" name="airports" value="near" checked><span>NL + German border</span></label>
-            <label><input type="radio" name="airports" value="all"><span>+ Belgium</span></label>
-          </div>
-        </fieldset>
-        <fieldset class="group" data-mode-only="fly">
-          <legend class="field-label">How far?</legend>
-          <div class="segmented" id="reach" role="radiogroup">
-            <label><input type="radio" name="reach" value="short"><span>Europe-ish</span></label>
-            <label><input type="radio" name="reach" value="smart" checked><span>Europe + crazy long-haul</span></label>
-            <label><input type="radio" name="reach" value="world"><span>Whole world</span></label>
-          </div>
-        </fieldset>
-        <fieldset class="group">
-          <legend class="field-label">We're into</legend>
-          <div class="chips" id="interest-chips"></div>
-        </fieldset>
+        <button class="more-toggle" id="more-toggle" type="button" aria-expanded="false" aria-controls="more-options">More options</button>
+        <div class="more-options" id="more-options">
+          <fieldset class="group" data-mode-only="fly">
+            <legend class="field-label">Which airports?</legend>
+            <div class="segmented" role="radiogroup">
+              <label><input type="radio" name="airports" value="nl"><span>Dutch only</span></label>
+              <label><input type="radio" name="airports" value="near" checked><span>NL + German border</span></label>
+              <label><input type="radio" name="airports" value="all"><span>+ Belgium</span></label>
+            </div>
+          </fieldset>
+          <fieldset class="group" data-mode-only="fly">
+            <legend class="field-label">How far?</legend>
+            <div class="segmented" id="reach" role="radiogroup">
+              <label><input type="radio" name="reach" value="short"><span>Europe-ish</span></label>
+              <label><input type="radio" name="reach" value="smart" checked><span>Europe + crazy long-haul</span></label>
+              <label><input type="radio" name="reach" value="world"><span>Whole world</span></label>
+            </div>
+          </fieldset>
+          <fieldset class="group">
+            <legend class="field-label">We're into</legend>
+            <div class="chips" id="interest-chips"></div>
+          </fieldset>
+        </div>
         <button class="btn-primary" type="submit">Hunt for deals</button>
         <datalist id="airport-list"></datalist>
         <datalist id="destination-list"></datalist>
@@ -112,9 +116,10 @@
           <div id="deal-map" class="deal-map"></div>
           <div class="map-legend" aria-hidden="true">
             <span><i class="lg lg-crazy"></i>Crazy</span><span><i class="lg lg-great"></i>Great</span><span><i class="lg lg-good"></i>Good</span>
-            <span><i class="lg lg-train"></i>Train to airport</span><span><i class="lg lg-flight"></i>Flight</span><span><i class="lg lg-ground"></i>Bus / train</span>
+            <span><i class="lg lg-train"></i>Train to airport</span><span><i class="lg lg-flight"></i>Flight</span><span><i class="lg lg-home"></i>Flight home, other airport</span><span><i class="lg lg-ground"></i>Bus / train</span>
           </div>
-          <p class="map-hint">Scroll over the map to zoom · click a dot or a deal to see its route</p>
+          <p class="map-hint for-mouse">Scroll over the map to zoom · click a dot or a deal to see its route</p>
+          <p class="map-hint for-touch">Pinch with two fingers to zoom · tap a dot or a deal to see its route</p>
         </aside>
         <div id="results-list" aria-live="polite"></div>
       </div>
