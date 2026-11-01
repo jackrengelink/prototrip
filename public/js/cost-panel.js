@@ -1,13 +1,14 @@
 // "What it really costs" on the trip page: the ticket and train, plus an optional bag and stay, for the whole group.
 
 import { h, money } from './dom.js';
-import { costBreakdown, groupNote, clampPeople } from './costs.js';
+import { costBreakdown, groupNote, clampPeople, stayDiscount } from './costs.js';
 
 const nightsLabel = (n) => `${n} night${n === 1 ? '' : 's'}`;
 
-function budgetSource(daily) {
+function budgetSource(daily, people) {
   const where = daily.basis === 'city' ? daily.place : daily.place ? `${daily.place}, the closest city with numbers` : 'other cities in this country';
-  return `Hostel, food and local transport based on ${where} (Backpacker Index 2025).`;
+  const off = Math.round(stayDiscount(people) * 100);
+  return `Hostel, food and local transport based on ${where} (Backpacker Index 2025)${off ? `, about ${off}% lower for sharing as a group` : ''}.`;
 }
 
 function row(label, amount, { strong = false } = {}) {
@@ -61,7 +62,7 @@ export function costPanel({ costs, ticket, ticketLabel, travel = 0, airline, cur
       stepper(),
       people > 1 ? row(`Total for ${people}`, eur(sum.total), { strong: true }) : null,
       note ? h('p', { class: 'cost-note is-warning' }, note) : null,
-      canBag || canStay ? h('p', { class: 'cost-note' }, ['Estimates.', canBag ? 'Your airline shows the real bag price when you book.' : null, canStay ? budgetSource(costs.daily) : null].filter(Boolean).join(' ')) : null,
+      canBag || canStay ? h('p', { class: 'cost-note' }, ['Estimates.', canBag ? 'Your airline shows the real bag price when you book.' : null, canStay ? budgetSource(costs.daily, people) : null].filter(Boolean).join(' ')) : null,
     ].filter(Boolean));
   }
 

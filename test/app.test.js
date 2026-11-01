@@ -2,7 +2,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { createApp } from '../server/app.js';
+import { createApp, clientIp } from '../server/app.js';
 import { createFlightService } from '../server/providers/flights/index.js';
 import { createCache } from '../server/lib/cache.js';
 import { loadConfig } from '../server/config.js';
@@ -67,6 +67,32 @@ test('GET /api/trip gives the costs for the small print on the trip page', async
   assert.equal(body.data.costs.nights, 4);
   assert.equal(body.data.costs.flights, 2);
   assert.ok(body.data.costs.daily.eur > 0);
+});
+
+test('the site is open: no login, old login links land on the home page', async () => {
+  assert.equal((await fetch(`${base}/`, { redirect: 'manual' })).status, 200);
+  assert.equal((await fetch(`${base}/api/status`)).status, 200);
+  for (const path of ['/login', '/logout']) {
+    const res = await fetch(`${base}${path}`, { redirect: 'manual' });
+    assert.equal(res.status, 302);
+    assert.equal(res.headers.get('location'), '/');
+  }
+  assert.equal((await fetch(`${base}/login`, { method: 'POST' })).status, 405);
+});
+
+test('a short trip link opens the full trip, and a bad one the home page', async () => {
+  const good = await fetch(`${base}/t/ein-opo-270126-270131`, { redirect: 'manual' });
+  assert.equal(good.status, 302);
+  assert.match(good.headers.get('location'), /^\/\?.*trip=OPO/);
+  const bad = await fetch(`${base}/t/nonsense`, { redirect: 'manual' });
+  assert.equal(bad.headers.get('location'), '/');
+});
+
+test('clientIp trusts the proxy only when told to', () => {
+  const req = { headers: { 'x-forwarded-for': '1.2.3.4, 5.6.7.8' }, socket: { remoteAddress: '9.9.9.9' } };
+  assert.equal(clientIp(req, true), '1.2.3.4');
+  assert.equal(clientIp(req, false), '9.9.9.9');
+  assert.equal(clientIp({ headers: {}, socket: { remoteAddress: '9.9.9.9' } }, true), '9.9.9.9');
 });
 
 test('GET /api/status reports demo mode with no keys', async () => {

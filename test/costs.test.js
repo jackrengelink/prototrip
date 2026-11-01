@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { dailyBudget, bagPerFlight, tripCosts } from '../server/data/costs.js';
-import { costBreakdown, groupNote, shareMessage, clampPeople } from '../public/js/costs.js';
+import { costBreakdown, groupNote, shareMessage, clampPeople, stayDiscount } from '../public/js/costs.js';
 import { pickFareTiers, moveTripDates } from '../public/js/fares.js';
 
 test('dailyBudget finds a city in the index, whatever its spelling', () => {
@@ -72,18 +72,39 @@ test('groupNote warns about seats, and about Ryanair group booking from 15', () 
   assert.doesNotMatch(groupNote({ people: 15, airline: 'KLM' }), /Ryanair/);
 });
 
-test('shareMessage gives the place, price, dates and link', () => {
-  const msg = shareMessage({ name: 'Porto', from: 'Weeze', price: '€57', travel: '€30', when: 'Mon 1 Feb to Thu 4 Feb', url: 'https://x.test/?a=1' });
-  assert.match(msg, /Porto/);
-  assert.match(msg, /€57 \+ €30/);
-  assert.match(msg, /Mon 1 Feb to Thu 4 Feb/);
-  assert.match(msg, /https:\/\/x\.test/);
+test('the stay gets cheaper per person as the group grows', () => {
+  const stay = (people) => costBreakdown({ ...parts, withStay: true, people }).stay;
+  assert.equal(stay(1), 195);
+  assert.ok(stay(2) < stay(1));
+  assert.ok(stay(4) < stay(2));
+  assert.ok(stay(8) < stay(4));
+  assert.ok(stay(15) < stay(8));
+  assert.equal(stay(30), stay(15), 'a group can only share so much');
 });
 
-test('shareMessage mentions the group total when there is one', () => {
-  const msg = shareMessage({ name: 'Porto', from: 'Weeze', price: '€57', when: 'Mon 1 Feb', url: 'https://x.test', people: 20, total: '€1,740' });
-  assert.match(msg, /20 people/);
-  assert.match(msg, /€1,740/);
+test('a group only gets cheaper on the stay, not on flights or trains', () => {
+  const c = costBreakdown({ ...parts, people: 30 });
+  assert.equal(c.perPerson, 87);
+  assert.equal(c.total, 2610);
+  assert.equal(stayDiscount(1), 0);
+  assert.equal(stayDiscount(30), 0.2);
+});
+
+test('shareMessage reads well in WhatsApp: bold title, price, dates, then the link alone', () => {
+  const lines = shareMessage({ name: 'Porto', deal: 'Crazy deal', from: 'Weeze', price: '€57', travel: '€30', when: 'Mon 1 Feb to Thu 4 Feb', url: 'https://x.test/t/a' }).split('\n');
+  assert.equal(lines[0], '✈️ *Porto* · Crazy deal');
+  assert.equal(lines[1], '*€57* per person + ~€30 train/bus');
+  assert.equal(lines[2], 'Mon 1 Feb to Thu 4 Feb');
+  assert.equal(lines[3], 'From Weeze');
+  assert.equal(lines[4], '');
+  assert.equal(lines[5], 'https://x.test/t/a');
+});
+
+test('shareMessage adds the group total, and a bus for bus trips', () => {
+  const msg = shareMessage({ icon: '🚌', name: 'Berlin', from: 'Enschede', price: '€47', when: 'Mon 1 Feb', url: 'https://x.test', people: 20, total: '€940' });
+  assert.match(msg, /^🚌 \*Berlin\*\n/);
+  assert.match(msg, /\*20 people: €940 in total\*/);
+  assert.doesNotMatch(msg, /train\/bus/);
 });
 
 test('pickFareTiers marks the cheapest days of the month', () => {

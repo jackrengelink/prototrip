@@ -166,7 +166,6 @@
 /* ---------- Trip page: sharing ---------- */
 .trip-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
 .trip-actions .back { margin-bottom: 0; }
-.share { display: flex; gap: 8px; }
 
 /* ---------- Trip page: what it really costs ---------- */
 .cost-panel { display: grid; gap: 6px; font-size: 0.86rem; }

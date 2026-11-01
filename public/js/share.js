@@ -1,33 +1,23 @@
-// Share a trip: the phone's share sheet where there is one, otherwise copy a message. WhatsApp gets its own link.
+// Copy a ready-made trip message for the group chat.
 
-import { h, extLink } from './dom.js';
+import { h } from './dom.js';
 
+const LABEL = 'Copy trip';
 const COPIED_FOR_MS = 2500;
-const usesShareSheet = () => typeof navigator.share === 'function' && window.matchMedia('(pointer: coarse)').matches;
 
 /** @param {()=>string} getMessage builds the message at click time, so it has the current group size */
-export function shareButtons(getMessage) {
-  const label = h('span', {}, 'Share trip');
+export function copyButton(getMessage) {
+  const label = h('span', {}, LABEL);
 
-  async function share() {
-    const text = getMessage();
+  async function copy() {
     try {
-      if (usesShareSheet()) await navigator.share({ text });
-      else {
-        await navigator.clipboard.writeText(text);
-        label.textContent = 'Message copied';
-        setTimeout(() => { label.textContent = 'Share trip'; }, COPIED_FOR_MS);
-      }
-    } catch (err) {
-      // Closing the share sheet isn't a failure.
-      if (err.name !== 'AbortError') label.textContent = "Couldn't copy, try WhatsApp";
+      await navigator.clipboard.writeText(getMessage());
+      label.textContent = 'Copied';
+    } catch {
+      label.textContent = "Couldn't copy";
     }
+    setTimeout(() => { label.textContent = LABEL; }, COPIED_FOR_MS);
   }
 
-  return h('div', { class: 'share' },
-    h('button', { class: 'btn-ghost', type: 'button', onClick: share }, label),
-    extLink('https://wa.me/', {
-      class: 'btn-ghost',
-      onClick: (e) => { e.currentTarget.href = `https://wa.me/?text=${encodeURIComponent(getMessage())}`; },
-    }, 'WhatsApp'));
+  return h('button', { class: 'btn-ghost', type: 'button', onClick: copy }, label);
 }

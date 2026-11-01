@@ -5,8 +5,9 @@ import { h, extLink, money, fmtDate, fmtDuration, stopsLabel } from './dom.js';
 import { dealBadge, compareLinks, trainLabel, dealLine, priceNumbers, priceSplit } from './board.js';
 import { costPanel } from './cost-panel.js';
 import { fareCalendar } from './fare-calendar.js';
-import { shareButtons } from './share.js';
+import { copyButton } from './share.js';
 import { costBreakdown, shareMessage } from './costs.js';
+import { shortTripPath } from './shortlink.js';
 import { formatDay } from './dates.js';
 
 const KIND_LABEL = { sight: 'Sight', museum: 'Museum', nature: 'Outdoors', activity: 'Do', food: 'Eat', nightlife: 'Drinks', shopping: 'Market & shops', flight: 'Travel' };
@@ -108,7 +109,7 @@ function calendarLegs(f) {
   return [out, { id: 'home', label: 'Way home', from: f.returnFrom || f.destination, to: f.returnTo || f.origin, date: f.returnDate }];
 }
 
-/** The cost panel and share buttons share one group size, so a shared message has the latest total. */
+/** The cost panel and copy button share one group size, so a copied message has the latest total. */
 function tripExtras(ctx, panel, message) {
   let people = ctx.people;
   const onPeople = (n) => {
@@ -117,12 +118,16 @@ function tripExtras(ctx, panel, message) {
   };
   return {
     cost: costPanel({ ...panel, people, onPeople }),
-    share: shareButtons(() => {
+    share: copyButton(() => {
       const { total } = costBreakdown({ ticket: panel.ticket, travel: panel.travel, people });
-      return shareMessage({ ...message, price: money(panel.ticket, panel.currency), travel: panel.travel ? money(panel.travel, panel.currency) : null, url: location.href, people, total: money(total, panel.currency) });
+      const url = `${location.origin}${shortTripPath({ ...message.link, people })}`;
+      return shareMessage({ ...message, price: money(panel.ticket, panel.currency), travel: panel.travel ? money(panel.travel, panel.currency) : null, url, people, total: money(total, panel.currency) });
     }),
   };
 }
+
+/** A copied message only brags about good deals. */
+const dealWorthSharing = (offer) => (['crazy', 'great'].includes(offer.deal?.tier) ? offer.deal.label : null);
 
 const whenLabel = (startDate, endDate, isReturn) => (isReturn ? `${formatDay(startDate)} to ${formatDay(endDate)}` : formatDay(startDate));
 
@@ -165,7 +170,13 @@ export function renderTrip(root, trip, ctx) {
 
   const extras = f ? tripExtras(ctx,
     { costs: trip.costs, ticket: f.price, ticketLabel: f.returnDate ? 'Flights' : 'Flight', travel: f.travelEur || 0, airline: f.airline, currency: f.currency },
-    { name, from: f.mixed ? `${f.origin}, back to ${f.returnTo}` : f.origin, when: whenLabel(f.departDate, f.returnDate, Boolean(f.returnDate)) }) : null;
+    {
+      name,
+      deal: dealWorthSharing(f),
+      from: `${f.originName || f.origin}${f.mixed ? `, back to ${f.returnTo}` : ''}`,
+      when: whenLabel(f.departDate, f.returnDate, Boolean(f.returnDate)),
+      link: { from: f.origin, to: f.destination, returnTo: f.mixed ? f.returnTo : null, depart: f.departDate, ret: f.returnDate },
+    }) : null;
 
   const hero = h('header', { class: 'trip-hero' },
     h('div', {},
@@ -229,7 +240,14 @@ export function renderGroundTrip(root, trip, ctx) {
 
   const extras = o ? tripExtras(ctx,
     { costs: trip.costs, ticket: o.price, ticketLabel: 'Bus or train', airline: o.airline, currency: o.currency || 'EUR' },
-    { name, from: 'Enschede', when: whenLabel(trip.stay.startDate, trip.stay.endDate, Boolean(o.returnDate)) }) : null;
+    {
+      icon: '🚌',
+      name,
+      deal: dealWorthSharing(o),
+      from: 'Enschede',
+      when: whenLabel(trip.stay.startDate, trip.stay.endDate, Boolean(o.returnDate)),
+      link: { mode: 'ground', cityId: ctx.current().trip, depart: ctx.current().tripDepart, ret: ctx.current().tripReturn },
+    }) : null;
 
   const hero = h('header', { class: 'trip-hero' },
     h('div', {},

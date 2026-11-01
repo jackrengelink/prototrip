@@ -726,21 +726,6 @@ main { padding: 0 var(--gutter) 64px; max-width: 1560px; margin: 0 auto; }
 .mode-pill { font-size: 0.7rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em; padding: 2px 7px; border-radius: 999px; background: color-mix(in srgb, #ffb000 22%, transparent); color: #ffb000; }
 .price-split { font-size: 0.8rem; color: var(--text-soft); }
 
-/* ---------- Login page (online version) ---------- */
-.login-body { display: grid; min-height: 100vh; place-items: center; }
-.login-wrap { width: min(420px, 100% - 32px); padding: 0; }
-.login-card {
-  display: grid; gap: 16px; padding: 28px 26px; background: var(--surface);
-  border-radius: var(--radius-lg); border-left: 5px solid var(--lime); box-shadow: var(--shadow);
-}
-.login-card .ring { width: 46px; height: 46px; }
-.login-title { margin: 0; font-family: var(--font-display); font-size: 2.2rem; letter-spacing: -0.03em; }
-.login-title b { color: var(--lime-bright); }
-.login-lede { margin: 0; color: var(--text-soft); }
-.login-error { margin: 0; color: var(--crazy); font-weight: 700; }
-.login-note { margin: 0; font-size: 0.8rem; color: var(--text-soft); }
-.login-card .btn-primary { justify-self: stretch; }
-
 /* Flight price first; the train/bus to the airport as a smaller second number. */
 .plus-travel { font-size: 0.62em; font-weight: 500; color: var(--text-soft); white-space: nowrap; }
 .board-row .plus-travel { color: var(--led-dim); }

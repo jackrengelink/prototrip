@@ -23,8 +23,6 @@ export function loadConfig(env = process.env) {
     contactEmail: clean(env.CONTACT_EMAIL),
     // Online deployment (see DEPLOY.md). Locally all of these can stay empty.
     host: clean(env.HOST) || '127.0.0.1',
-    accessUser: clean(env.ACCESS_USER) || 'proto',
-    accessPassword: clean(env.ACCESS_PASSWORD),
     trustProxy: clean(env.TRUST_PROXY) === '1',
   });
 }

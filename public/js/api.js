@@ -33,11 +33,6 @@ export async function getJson(path, params = {}) {
   } catch {
     throw new Error('Could not reach the ProtoTrip server. Is it running?');
   }
-  // Session expired on the online version: go to the login page.
-  if (res.status === 401) {
-    location.href = '/login';
-    throw new Error('Please log in again.');
-  }
   const body = await res.json().catch(() => null);
   if (!body?.success) throw new Error(body?.error || `Request failed (${res.status})`);
   return body.data;

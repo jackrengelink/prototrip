@@ -57,7 +57,8 @@ Two modes, switched with the tabs at the top of the search:
   - *What it really costs*: the ticket and train, a tick box for a 10 kg cabin bag (low-cost airlines only), a tick box
     for hostel, food and transport, and the total for your group. These are estimates. The daily budget comes from
     the Europe Backpacker Index 2025; the group warning is there because fares don't say how many seats are left.
-  - *Share trip*: a ready-made message with the price, dates and link, or straight to WhatsApp.
+  - *Copy trip*: a ready-made WhatsApp message with the price, dates and a short link like `/t/ein-opo-270126-270131`.
+    The link holds the airports and dates, so a normal fare reopens as the best fare on that route and day.
 
 ### 🚌 Bus & train
 - **Straight from Enschede** by FlixBus and FlixTrain: no airport, no hassle. Every trip-worthy destination

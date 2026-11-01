@@ -98,7 +98,7 @@ export async function planTrip({ query, offerId, flights, weather }) {
 
   return {
     destination: { code: offer?.destination || query.destination, name: cityName, country: dest?.country || null, center },
-    flight: offer ? { ...offer, arrival, returnTimeAssumed: isReturn && !offer.returnTime } : null,
+    flight: offer ? { ...offer, originName: findAirport(offer.origin)?.name || null, arrival, returnTimeAssumed: isReturn && !offer.returnTime } : null,
     stay,
     costs: tripCosts({ airline: offer?.airline, returnDate: offer?.returnDate || query.returnDate, stay, place: { name: cityName, country: dest?.country } }),
     alternatives: offers.filter((o) => o.id !== offer?.id && !o.mixed).slice(0, 6),

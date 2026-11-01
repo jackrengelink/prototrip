@@ -6,7 +6,7 @@ import { searchAirports, searchCountries, findAirport, homeAirports, HOME } from
 import { parseSearch, parseStay, parseGroundSearch, parseCityId, parseIata, parseMonth, ValidationError } from './lib/validate.js';
 import { comparisonLinks } from './lib/links.js';
 import { planTrip, planGroundTrip, exploreTrip } from './trip.js';
-import { clientIp, createSessions, createLockout, parseCookies, sessionCookie, clearedCookie, loginPage, safeEqual, COOKIE_NAME } from './lib/auth.js';
+import { tripUrlFromCode } from '../public/js/shortlink.js';
 
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX = 90;
@@ -38,6 +38,15 @@ const SECURITY_HEADERS = {
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'X-Frame-Options': 'DENY',
 };
+
+/** The visitor's IP. Behind a hosting proxy (Render) the real one is the first X-Forwarded-For entry. */
+export function clientIp(req, trustProxy) {
+  if (trustProxy) {
+    const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    if (forwarded) return forwarded;
+  }
+  return req.socket?.remoteAddress || 'unknown';
+}
 
 function send(res, status, body, headers = {}) {
   res.writeHead(status, { ...SECURITY_HEADERS, ...headers });
@@ -85,10 +94,6 @@ async function serveStatic(res, publicDir, urlPath) {
 export function createApp({ config, flights, ground, places, weather, logger = console }) {
   const publicDir = path.join(config.root, 'public');
   const allow = createRateLimiter();
-  const sessions = config.accessPassword ? createSessions({ password: config.accessPassword }) : null;
-  const lockout = createLockout();
-  // Pages that must work before logging in: the login page itself and what it needs to look right.
-  const PUBLIC_PATHS = new Set(['/login', '/styles.css', '/favicon.svg']);
   // Online, HTTPS is done by the host; tell browsers to always use it.
   const extraHeaders = config.trustProxy ? { 'Strict-Transport-Security': 'max-age=31536000' } : {};
 
@@ -152,58 +157,17 @@ export function createApp({ config, flights, ground, places, weather, logger = c
     }
   };
 
-  /** Read a small form body (the login form). */
-  function readForm(req, limit = 2048) {
-    return new Promise((resolve, reject) => {
-      let body = '';
-      req.on('data', (chunk) => {
-        body += chunk;
-        if (body.length > limit) { reject(new Error('body too large')); req.destroy(); }
-      });
-      req.on('end', () => resolve(new URLSearchParams(body)));
-      req.on('error', reject);
-    });
-  }
-
-  function html(res, status, page, headers = {}) {
-    return send(res, status, page, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
-  }
-
-  /** Login flow. Returns true when it has answered the request. */
-  async function handleAuth(req, res, url, ip) {
-    if (url.pathname === '/login' && req.method === 'POST') {
-      if (lockout.locked(ip)) return html(res, 429, loginPage({ error: 'Too many wrong passwords. Try again in 10 minutes.' })), true;
-      const form = await readForm(req).catch(() => new URLSearchParams());
-      if (!safeEqual(form.get('password') || '', config.accessPassword)) {
-        lockout.fail(ip);
-        return html(res, 401, loginPage({ error: 'That password is not right. Ask the committee.' })), true;
-      }
-      lockout.reset(ip);
-      return send(res, 303, '', { Location: '/', 'Set-Cookie': sessionCookie(sessions.issue(), { secure: config.trustProxy }) }), true;
-    }
-    if (url.pathname === '/logout') {
-      return send(res, 303, '', { Location: '/login', 'Set-Cookie': clearedCookie(config.trustProxy) }), true;
-    }
-    if (sessions.valid(parseCookies(req.headers.cookie)[COOKIE_NAME])) {
-      if (url.pathname === '/login') return send(res, 303, '', { Location: '/' }), true;
-      return false;
-    }
-    if (url.pathname === '/login') return html(res, 200, loginPage()), true;
-    if (PUBLIC_PATHS.has(url.pathname)) return false;
-    if (url.pathname.startsWith('/api/')) return json(res, 401, { success: false, error: 'Please log in again.' }), true;
-    return send(res, 303, '', { Location: '/login' }), true;
-  }
-
   async function handle(req, res) {
     const url = new URL(req.url, 'http://localhost');
-    const isLoginPost = req.method === 'POST' && url.pathname === '/login' && sessions;
-    if (req.method !== 'GET' && req.method !== 'HEAD' && !isLoginPost) return send(res, 405, 'Method not allowed');
-    // Health check for the host (Render): no password, no data.
+    if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method not allowed');
+    // Health check for the host (Render).
     if (url.pathname === '/healthz') return send(res, 200, 'ok', { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
 
     const ip = clientIp(req, config.trustProxy);
     for (const [k, v] of Object.entries(extraHeaders)) res.setHeader(k, v);
-    if (sessions && await handleAuth(req, res, url, ip)) return;
+    // The site used to have a login: old bookmarks just land on the home page.
+    if (url.pathname === '/login' || url.pathname === '/logout') return send(res, 302, '', { Location: '/' });
+    if (url.pathname.startsWith('/t/')) return send(res, 302, '', { Location: tripUrlFromCode(url.pathname.slice(3)) || '/' });
     if (!url.pathname.startsWith('/api/')) return serveStatic(res, publicDir, url.pathname);
 
     if (!allow(ip)) return json(res, 429, { success: false, error: 'Too many requests, slow down a little' });
