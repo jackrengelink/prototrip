@@ -166,6 +166,13 @@
 /* ---------- Trip page: sharing ---------- */
 .trip-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
 .trip-actions .back { margin-bottom: 0; }
+.copy-buffer { position: fixed; top: 0; left: -9999px; opacity: 0; }
+.copy-fallback-wrap { display: grid; gap: 6px; max-width: 520px; margin-bottom: 14px; }
+.copy-fallback-note { margin: 0; font-size: 0.8rem; color: var(--text-soft); }
+.copy-fallback {
+  width: 100%; resize: none; padding: 10px 12px; font: inherit; font-size: 0.85rem; line-height: 1.45;
+  background: var(--bg-2); color: var(--text); border: 1px solid var(--cyan); border-radius: var(--radius);
+}
 
 /* ---------- Trip page: what it really costs ---------- */
 .cost-panel { display: grid; gap: 6px; font-size: 0.86rem; }

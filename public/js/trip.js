@@ -180,7 +180,8 @@ export function renderTrip(root, trip, ctx) {
 
   const hero = h('header', { class: 'trip-hero' },
     h('div', {},
-      h('div', { class: 'trip-actions' }, h('button', { class: 'btn-ghost back', type: 'button', onClick: ctx.onBack }, '← All deals'), extras?.share),
+      h('div', { class: 'trip-actions' }, h('button', { class: 'btn-ghost back', type: 'button', onClick: ctx.onBack }, '← All deals'), extras?.share.button),
+      extras?.share.fallback,
       h('p', { class: 'trip-kicker' }, [trip.destination.country, f?.distanceKm ? `${f.distanceKm.toLocaleString('en')} km from ${f.origin}` : null].filter(Boolean).join(' · ')),
       h('h2', { class: 'trip-title' }, name),
       h('p', { class: 'trip-dates' }, `${fmtDate(trip.stay.startDate)} → ${fmtDate(trip.stay.endDate)}`)),
@@ -251,7 +252,8 @@ export function renderGroundTrip(root, trip, ctx) {
 
   const hero = h('header', { class: 'trip-hero' },
     h('div', {},
-      h('div', { class: 'trip-actions' }, h('button', { class: 'btn-ghost back', type: 'button', onClick: ctx.onBack }, '← All deals'), extras?.share),
+      h('div', { class: 'trip-actions' }, h('button', { class: 'btn-ghost back', type: 'button', onClick: ctx.onBack }, '← All deals'), extras?.share.button),
+      extras?.share.fallback,
       h('p', { class: 'trip-kicker' }, [trip.destination.country, o?.distanceKm ? `${o.distanceKm.toLocaleString('en')} km from Enschede` : null, 'by bus & train'].filter(Boolean).join(' · ')),
       h('h2', { class: 'trip-title' }, name),
       h('p', { class: 'trip-dates' }, `${fmtDate(trip.stay.startDate)} → ${fmtDate(trip.stay.endDate)}`)),
