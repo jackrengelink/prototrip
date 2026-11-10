@@ -15,7 +15,9 @@ of `github.com/jackrengelink/prototrip` (private) is built and deployed automati
 | Health check path | `/healthz` |
 | Environment variables | `TRAVELPAYOUTS_TOKEN`, `SERPAPI_KEY`, `GEOAPIFY_KEY`, `CONTACT_EMAIL` (and `RYANAIR=on`) |
 
-Don't set `PORT`: Render picks it and the app listens on whatever Render says.
+Don't set `PORT`: Render picks it and the app listens on whatever Render says. On Render (which sets `RENDER=true`)
+the app listens on `0.0.0.0` and trusts Render's proxy by itself, so it also works if the service runs as plain
+**Node** (build command `npm install`, start command `npm run start:once`) instead of Docker.
 
 ## Open to everyone
 There is no login: anyone with the address can use the site. Each address gets at most 90 requests a minute. Visitors

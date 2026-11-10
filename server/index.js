@@ -40,7 +40,7 @@ function listen(port, triesLeft) {
     logger.error(`Could not start ProtoTrip: ${err.message}`);
     process.exit(1);
   });
-  server.listen(process.env.PORT, '0.0.0.0');
+  server.listen(port, HOST);
 }
 
 server.once('listening', () => {
